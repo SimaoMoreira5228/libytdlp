@@ -83,6 +83,18 @@ def check_unsupported_url():
     raise AssertionError("unsupported url was accepted")
 
 
+def check_extractor_inventory():
+    from libytdlp_bridge import extractor_names
+
+    names = json.loads(extractor_names())
+    assert isinstance(names, list), type(names)
+    assert names == sorted(names), "extractor list must be sorted"
+    assert len(names) > 1000, f"expected a full registry, got {len(names)}"
+    assert "generic" in names, "generic extractor missing"
+    assert "youtube" in names, "youtube extractor missing"
+    print(f"extractor inventory ok: {len(names)} extractors")
+
+
 def check_extractor_args_passthrough():
     from libytdlp_bridge.extract import _params
     from yt_dlp import YoutubeDL
@@ -137,6 +149,7 @@ if __name__ == "__main__":
     check_rejects_empty_url()
     check_rejects_non_object_options()
     check_cachedir_defaults_off()
+    check_extractor_inventory()
     check_extractor_args_passthrough()
     check_merge_options()
     check_runtime_info()

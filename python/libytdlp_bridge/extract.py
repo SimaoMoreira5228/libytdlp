@@ -60,6 +60,12 @@ def versions():
     )
 
 
+def extractor_names():
+    from yt_dlp.extractor import list_extractor_classes
+
+    return json.dumps(sorted(ie.IE_NAME for ie in list_extractor_classes()))
+
+
 def runtime_info(profile, ytdlp_commit, abi, host_owned):
     versions_info = json.loads(versions())
     versions_info["wrapper"] = BRIDGE_VERSION
