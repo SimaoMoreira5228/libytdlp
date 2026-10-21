@@ -4,6 +4,7 @@ use libytdlp_sys as sys;
 
 use crate::error::Error;
 use crate::error::Kind;
+use crate::job::DownloadJob;
 use crate::media::MediaInfo;
 
 pub struct Client {
@@ -57,6 +58,34 @@ impl Client {
         }
 
         MediaInfo::from_raw(result)
+    }
+
+    pub fn download(&self, url: &str) -> Result<DownloadJob, Error> {
+        if url.as_bytes().contains(&0) {
+            return Err(Error::new(
+                Kind::InvalidArgument,
+                "url must not contain NUL bytes",
+            ));
+        }
+
+        let mut job: *mut sys::LyJob = ptr::null_mut();
+        let mut error: *mut sys::LyError = ptr::null_mut();
+
+        let status = unsafe {
+            sys::ly_download_start(
+                self.raw,
+                url.as_ptr().cast(),
+                url.len(),
+                &mut job,
+                &mut error,
+            )
+        };
+
+        if status != sys::LY_OK || job.is_null() {
+            return Err(Error::from_ptr(error));
+        }
+
+        Ok(DownloadJob::from_raw(job))
     }
 }
 

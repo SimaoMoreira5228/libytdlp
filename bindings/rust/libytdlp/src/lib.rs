@@ -5,12 +5,16 @@ use libytdlp_sys as sys;
 
 mod client;
 mod error;
+mod job;
 mod media;
+mod progress;
 mod runtime;
 
 pub use client::Client;
 pub use error::{Error, Kind};
+pub use job::{DownloadJob, JobState};
 pub use media::MediaInfo;
+pub use progress::ProgressEvent;
 pub use runtime::{RuntimeInfo, abi_version, runtime_info};
 
 pub(crate) fn read_result_json(result: *mut sys::LyResult) -> Result<String, error::Error> {
