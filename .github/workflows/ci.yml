@@ -1,0 +1,48 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Install system deps
+        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build python3-dev
+      - uses: astral-sh/setup-uv@v6
+      - name: Sync Python env
+        run: uv sync --locked
+      - name: Configure and build
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+          cmake --build build --parallel
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+  ubsan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Install system deps
+        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build python3-dev
+      - uses: astral-sh/setup-uv@v6
+      - name: Configure, build and test under UBSan
+        run: |
+          cmake -S . -B build -G Ninja -DLIBYTDLP_SANITIZE_UNDEFINED=ON
+          cmake --build build --parallel
+          ctest --test-dir build --output-on-failure
+
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install clang-format
+        run: sudo apt-get update && sudo apt-get install -y clang-format
+      - name: Check formatting
+        run: ./fmt --check
