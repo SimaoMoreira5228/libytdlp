@@ -65,19 +65,36 @@ add_library(ytdlp SHARED
 )
 add_library(libytdlp::ytdlp ALIAS ytdlp)
 
-target_include_directories(ytdlp
-    PUBLIC
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
-    PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/native
+add_library(ytdlp_static STATIC
+    native/api.cpp
+    native/bridge.cpp
+    native/jobs.cpp
+    native/runtime.cpp
 )
+add_library(libytdlp::ytdlp_static ALIAS ytdlp_static)
+
+foreach(target ytdlp ytdlp_static)
+    target_include_directories(${target}
+        PUBLIC
+            $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+            $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/native
+    )
+    target_compile_definitions(${target} PRIVATE
+        LIBYTDLP_BRIDGE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/python"
+        LIBYTDLP_YTDLP_DIR="${CMAKE_CURRENT_SOURCE_DIR}/third_party/yt-dlp"
+        LIBYTDLP_DEPLOYMENT_PROFILE="${LIBYTDLP_DEPLOYMENT_PROFILE}"
+        LIBYTDLP_YTDLP_COMMIT="${LIBYTDLP_YTDLP_COMMIT}"
+    )
+endforeach()
 target_link_libraries(ytdlp PRIVATE Python::Python)
-target_compile_definitions(ytdlp PRIVATE
-    LIBYTDLP_BRIDGE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/python"
-    LIBYTDLP_YTDLP_DIR="${CMAKE_CURRENT_SOURCE_DIR}/third_party/yt-dlp"
-    LIBYTDLP_DEPLOYMENT_PROFILE="${LIBYTDLP_DEPLOYMENT_PROFILE}"
-    LIBYTDLP_YTDLP_COMMIT="${LIBYTDLP_YTDLP_COMMIT}"
+target_link_libraries(ytdlp_static PUBLIC Python::Python)
+set_target_properties(ytdlp_static PROPERTIES
+    OUTPUT_NAME ytdlp
+    POSITION_INDEPENDENT_CODE ON
+    CXX_VISIBILITY_PRESET hidden
+    VISIBILITY_INLINES_HIDDEN ON
 )
 set_target_properties(ytdlp PROPERTIES
     OUTPUT_NAME ytdlp
@@ -91,12 +108,15 @@ if(LIBYTDLP_SANITIZERS)
     list(JOIN LIBYTDLP_SANITIZERS "," LIBYTDLP_SANITIZER_FLAGS)
     target_compile_options(ytdlp PRIVATE -fsanitize=${LIBYTDLP_SANITIZER_FLAGS} -fno-omit-frame-pointer)
     target_link_options(ytdlp PRIVATE -fsanitize=${LIBYTDLP_SANITIZER_FLAGS})
+    target_compile_options(ytdlp_static PRIVATE -fsanitize=${LIBYTDLP_SANITIZER_FLAGS} -fno-omit-frame-pointer)
+    target_link_options(ytdlp_static PUBLIC -fsanitize=${LIBYTDLP_SANITIZER_FLAGS})
 endif()
 
 if(NOT WIN32)
     set(THREADS_PREFER_PTHREAD_FLAG ON)
     find_package(Threads REQUIRED)
     target_link_libraries(ytdlp PRIVATE Threads::Threads)
+    target_link_libraries(ytdlp_static PUBLIC Threads::Threads)
 endif()
 
 option(LIBYTDLP_BUILD_RUST "Build Rust bindings via Corrosion" OFF)
@@ -110,7 +130,7 @@ if(LIBYTDLP_BUILD_RUST)
     corrosion_import_crate(MANIFEST_PATH ${CMAKE_CURRENT_SOURCE_DIR}/bindings/rust/Cargo.toml)
 endif()
 
-install(TARGETS ytdlp
+install(TARGETS ytdlp ytdlp_static
     EXPORT libytdlp-targets
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
