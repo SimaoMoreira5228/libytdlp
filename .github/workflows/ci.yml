@@ -180,3 +180,28 @@ jobs:
         env:
           LIBYTDLP_LIB_DIR: ${{ github.workspace }}/build
         run: cargo test --locked
+
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: astral-sh/setup-uv@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Sync Python env
+        run: uv sync --locked
+      - name: Configure
+        run: cmake -S . -B build -G Ninja -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+      - name: Build
+        run: cmake --build build --parallel
+      - name: Test
+        run: ctest --test-dir build --output-on-failure --timeout 300
+      - name: Rust tests
+        working-directory: bindings/rust
+        env:
+          LIBYTDLP_LIB_DIR: ${{ github.workspace }}/build
+        run: cargo test --locked
