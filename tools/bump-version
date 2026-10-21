@@ -1,0 +1,256 @@
+#!/usr/bin/env python3
+"""Single-source version management for libytdlp.
+
+Usage:
+    tools/bump-version X.Y.Z[-suffix]
+    tools/bump-version --check
+
+The root VERSION file is the source of truth. Setting a version rewrites
+every literal (Cargo manifests, pyproject.toml, uv.lock stanza, Python
+bridge), refreshes both Cargo.lock files, then re-runs the consistency
+check. Checking verifies all of them agree without changing anything.
+"""
+
+import os
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+VERSION_FILE = ROOT / "VERSION"
+BUILD_DIR = Path(os.environ.get("BUILD_DIR", ROOT / "build"))
+PATTERN = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$")
+
+failures = []
+
+
+def fail(message):
+    print(f"bump-version --check: {message}", file=sys.stderr)
+    failures.append(message)
+
+
+def read_expected():
+    if not VERSION_FILE.is_file():
+        print("bump-version --check: VERSION file is missing", file=sys.stderr)
+        sys.exit(1)
+
+    expected = VERSION_FILE.read_text(encoding="utf-8").strip()
+
+    if not PATTERN.match(expected):
+        print(f"bump-version --check: VERSION holds '{expected}', want X.Y.Z", file=sys.stderr)
+        sys.exit(1)
+
+    return expected
+
+
+def split_parts(expected):
+    numeric = expected.split("-", 1)[0]
+    major, minor, patch = numeric.split(".")
+    return major, minor, patch
+
+
+def check_cmake(expected):
+    text = (ROOT / "CMakeLists.txt").read_text(encoding="utf-8")
+
+    if "file(STRINGS" not in text or "VERSION" not in text:
+        fail("CMakeLists.txt does not read the VERSION file")
+
+    if "project(libytdlp VERSION ${LIBYTDLP_VERSION" not in text:
+        fail("CMakeLists.txt project() is not wired to the VERSION file")
+
+
+def check_template():
+    template = ROOT / "include" / "libytdlp" / "version.h.in"
+
+    if not template.is_file():
+        fail("include/libytdlp/version.h.in is missing")
+        return
+
+    text = template.read_text(encoding="utf-8")
+
+    for token in ("@PROJECT_VERSION_MAJOR@", "@PROJECT_VERSION_MINOR@",
+                  "@PROJECT_VERSION_PATCH@", '"@PROJECT_VERSION@"'):
+        if token not in text:
+            fail(f"version.h.in is missing token {token}")
+
+    if "#define LIBYTDLP_ABI_VERSION 1u" not in text:
+        fail("version.h.in lost the LIBYTDLP_ABI_VERSION macro")
+
+
+def check_generated(expected):
+    major, minor, patch = split_parts(expected)
+    generated = BUILD_DIR / "generated" / "include" / "libytdlp" / "version.h"
+
+    if not generated.is_file():
+        return
+
+    text = generated.read_text(encoding="utf-8")
+
+    for name, value in (("MAJOR", major), ("MINOR", minor), ("PATCH", patch)):
+        if f"#define LIBYTDLP_VERSION_{name} {value}" not in text:
+            fail(f"generated version.h {name} does not match {expected}")
+
+    if f'#define LIBYTDLP_VERSION_STRING "{expected}"' not in text:
+        fail(f"generated version.h STRING does not match {expected}")
+
+
+def first_version_line(path):
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if line.startswith('version = "'):
+            return line.split('"')[1]
+    return None
+
+
+def check_cargo(expected):
+    crates = [
+        "bindings/rust/libytdlp-sys/Cargo.toml",
+        "bindings/rust/libytdlp/Cargo.toml",
+        "examples/resolve/Cargo.toml",
+    ]
+
+    for crate in crates:
+        found = first_version_line(ROOT / crate)
+
+        if found != expected:
+            fail(f"{crate} version is '{found}', want '{expected}'")
+
+    text = (ROOT / "bindings" / "rust" / "libytdlp" / "Cargo.toml").read_text(encoding="utf-8")
+    match = re.search(r'^libytdlp-sys = \{ version = "([^"]+)"', text, re.MULTILINE)
+
+    if match is None or match.group(1) != expected:
+        found = match.group(1) if match else None
+        fail(f"libytdlp dependency on libytdlp-sys is '{found}', want '{expected}'")
+
+
+def check_uv(expected):
+    project_version = first_version_line(ROOT / "pyproject.toml")
+
+    if project_version != expected:
+        fail(f"pyproject.toml version is '{project_version}', want '{expected}'")
+
+    armed = False
+    found = None
+
+    for line in (ROOT / "uv.lock").read_text(encoding="utf-8").splitlines():
+        if line == "[[package]]":
+            armed = False
+        elif line == 'name = "libytdlp-tools"':
+            armed = True
+        elif armed and line.startswith("version = "):
+            found = line.split('"')[1]
+            break
+
+    if found != expected:
+        fail(f"uv.lock libytdlp-tools version is '{found}', want '{expected}'")
+
+
+def check_bridge(expected):
+    text = (ROOT / "python" / "libytdlp_bridge" / "extract.py").read_text(encoding="utf-8")
+    match = re.search(r'^BRIDGE_VERSION = "([^"]+)"', text, re.MULTILINE)
+
+    if match is None or match.group(1) != expected:
+        found = match.group(1) if match else None
+        fail(f"python bridge version is '{found}', want '{expected}'")
+
+    init = (ROOT / "python" / "libytdlp_bridge" / "__init__.py").read_text(encoding="utf-8")
+
+    if "BRIDGE_VERSION" not in init or "from .extract import" not in init:
+        fail("__init__.py does not reuse BRIDGE_VERSION from .extract")
+
+    if re.search(r'^(__version__|BRIDGE_VERSION) = "', init, re.MULTILINE):
+        fail("__init__.py carries its own version literal")
+
+
+def run_check():
+    expected = read_expected()
+    check_cmake(expected)
+    check_template()
+    check_generated(expected)
+    check_cargo(expected)
+    check_uv(expected)
+    check_bridge(expected)
+
+    if failures:
+        print(f"bump-version --check: {len(failures)} mismatch(es)", file=sys.stderr)
+        return 1
+
+    print(f"versions agree on {expected}")
+    return 0
+
+
+def rewrite_literal(path, pattern, replacement):
+    text = path.read_text(encoding="utf-8")
+    updated, count = re.subn(pattern, replacement, text, count=0, flags=re.MULTILINE)
+
+    if count == 0:
+        raise SystemExit(f"version line not found in {path}")
+
+    path.write_text(updated, encoding="utf-8")
+
+
+def rewrite_uv_lock(new):
+    path = ROOT / "uv.lock"
+    lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
+    armed = False
+    updated = False
+
+    for index, line in enumerate(lines):
+        if line == "[[package]]\n":
+            armed = False
+        elif line == 'name = "libytdlp-tools"\n':
+            armed = True
+        elif armed and line.startswith("version = "):
+            lines[index] = f'version = "{new}"\n'
+            updated = True
+            break
+
+    if not updated:
+        raise SystemExit("libytdlp-tools version line not found in uv.lock")
+
+    path.write_text("".join(lines), encoding="utf-8")
+
+
+def run_bump(new):
+    VERSION_FILE.write_text(new + "\n", encoding="utf-8")
+
+    version_pattern = r'^version = "[^"]*"'
+    replacement = f'version = "{new}"'
+
+    for crate in ("bindings/rust/libytdlp-sys/Cargo.toml",
+                  "bindings/rust/libytdlp/Cargo.toml",
+                  "examples/resolve/Cargo.toml",
+                  "pyproject.toml"):
+        rewrite_literal(ROOT / crate, version_pattern, replacement)
+
+    rewrite_literal(
+        ROOT / "bindings" / "rust" / "libytdlp" / "Cargo.toml",
+        r'^(libytdlp-sys = \{ version = ")[^"]+(")',
+        rf"\g<1>{new}\g<2>",
+    )
+    rewrite_literal(
+        ROOT / "python" / "libytdlp_bridge" / "extract.py",
+        r'^BRIDGE_VERSION = "[^"]*"',
+        f'BRIDGE_VERSION = "{new}"',
+    )
+    rewrite_uv_lock(new)
+
+    subprocess.run(["cargo", "check"], cwd=ROOT / "bindings" / "rust", check=True)
+    subprocess.run(["cargo", "check"], cwd=ROOT / "examples" / "resolve", check=True)
+
+    sys.exit(run_check())
+
+
+def main(argv):
+    if len(argv) == 1 and argv[0] == "--check":
+        sys.exit(run_check())
+
+    if len(argv) == 1 and PATTERN.match(argv[0]):
+        run_bump(argv[0])
+
+    print("usage: tools/bump-version X.Y.Z | tools/bump-version --check", file=sys.stderr)
+    sys.exit(2)
+
+
+if __name__ == "__main__":
+    main(sys.argv[1:])
