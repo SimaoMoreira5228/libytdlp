@@ -17,11 +17,13 @@ permissions:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    environment: CARGO_REGISTRY_TOKEN
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
       - uses: dtolnay/rust-toolchain@stable
+      - uses: astral-sh/setup-uv@v6
       - name: Install system deps
         run: sudo apt-get update && sudo apt-get install -y cmake ninja-build python3-dev
       - name: Build native lib for publish verification
@@ -52,29 +54,43 @@ jobs:
       - name: Skip if already published
         id: published
         run: |
-          if curl -fsSL "https://crates.io/api/v1/crates/libytdlp/${{ steps.version.outputs.version }}" -o /dev/null; then
+          if curl -fsSL -A "libytdlp-publish (https://github.com/SimaoMoreira5228/libytdlp)" "https://crates.io/api/v1/crates/libytdlp/${{ steps.version.outputs.version }}" -o /dev/null; then
             echo "done=true" >> "$GITHUB_OUTPUT"
             echo "libytdlp ${{ steps.version.outputs.version }} already on crates.io, nothing to do"
           else
             echo "done=false" >> "$GITHUB_OUTPUT"
           fi
+      - name: Skip sys if already published
+        id: sys_published
+        run: |
+          if curl -fsSL -A "libytdlp-publish (https://github.com/SimaoMoreira5228/libytdlp)" "https://crates.io/api/v1/crates/libytdlp-sys/${{ steps.version.outputs.version }}" -o /dev/null; then
+            echo "done=true" >> "$GITHUB_OUTPUT"
+            echo "libytdlp-sys ${{ steps.version.outputs.version }} already on crates.io, nothing to do"
+          else
+            echo "done=false" >> "$GITHUB_OUTPUT"
+          fi
       - name: Dry run sys crate
-        if: steps.published.outputs.done != 'true'
+        if: steps.published.outputs.done != 'true' && steps.sys_published.outputs.done != 'true'
         working-directory: bindings/rust
         env:
           LIBYTDLP_LIB_DIR: ${{ github.workspace }}/build
         run: cargo publish -p libytdlp-sys --dry-run
-      - name: Publish sys crate
+      - name: Authenticate with crates.io
+        id: auth
         if: steps.published.outputs.done != 'true'
+        uses: rust-lang/crates-io-auth-action@v1
+      - name: Publish sys crate
+        if: steps.published.outputs.done != 'true' && steps.sys_published.outputs.done != 'true'
         working-directory: bindings/rust
         env:
           LIBYTDLP_LIB_DIR: ${{ github.workspace }}/build
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
         run: cargo publish -p libytdlp-sys
       - name: Wait for sys crate on the index
         if: steps.published.outputs.done != 'true'
         run: |
           for attempt in $(seq 1 30); do
-            if curl -fsSL "https://crates.io/api/v1/crates/libytdlp-sys/${{ steps.version.outputs.version }}" -o /dev/null; then
+            if curl -fsSL -A "libytdlp-publish (https://github.com/SimaoMoreira5228/libytdlp)" "https://crates.io/api/v1/crates/libytdlp-sys/${{ steps.version.outputs.version }}" -o /dev/null; then
               echo "libytdlp-sys visible after $attempt checks"
               exit 0
             fi
@@ -93,6 +109,7 @@ jobs:
         working-directory: bindings/rust
         env:
           LIBYTDLP_LIB_DIR: ${{ github.workspace }}/build
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
         run: cargo publish -p libytdlp
       - name: Create GitHub release
         if: github.ref_type == 'tag' && steps.published.outputs.done != 'true'
