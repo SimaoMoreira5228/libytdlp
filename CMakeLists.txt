@@ -13,6 +13,15 @@ include(CTest)
 
 option(LIBYTDLP_SANITIZE_ADDRESS "Build with AddressSanitizer" OFF)
 option(LIBYTDLP_SANITIZE_UNDEFINED "Build with UndefinedBehaviorSanitizer" OFF)
+set(LIBYTDLP_DEPLOYMENT_PROFILE "FULL_BUNDLED" CACHE STRING "Dependency provisioning profile")
+set_property(CACHE LIBYTDLP_DEPLOYMENT_PROFILE PROPERTY STRINGS
+    FULL_BUNDLED BUNDLED_YTDLP_SYSTEM_PYTHON SYSTEM_YTDLP_SYSTEM_PYTHON)
+
+if(NOT LIBYTDLP_DEPLOYMENT_PROFILE MATCHES
+    "^(FULL_BUNDLED|BUNDLED_YTDLP_SYSTEM_PYTHON|SYSTEM_YTDLP_SYSTEM_PYTHON)$")
+    message(FATAL_ERROR "LIBYTDLP_DEPLOYMENT_PROFILE must be FULL_BUNDLED, "
+        "BUNDLED_YTDLP_SYSTEM_PYTHON or SYSTEM_YTDLP_SYSTEM_PYTHON")
+endif()
 
 set(LIBYTDLP_SANITIZERS "")
 if(LIBYTDLP_SANITIZE_ADDRESS)
@@ -36,6 +45,18 @@ else()
     message(STATUS "yt-dlp not importable on system Python; tests fall back to third_party/yt-dlp")
 endif()
 
+execute_process(
+    COMMAND git -C ${CMAKE_CURRENT_SOURCE_DIR}/third_party/yt-dlp rev-parse HEAD
+    OUTPUT_VARIABLE LIBYTDLP_YTDLP_COMMIT
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    ERROR_QUIET
+)
+if(NOT LIBYTDLP_YTDLP_COMMIT)
+    set(LIBYTDLP_YTDLP_COMMIT "unknown")
+endif()
+message(STATUS "Deployment profile: ${LIBYTDLP_DEPLOYMENT_PROFILE}")
+message(STATUS "yt-dlp commit: ${LIBYTDLP_YTDLP_COMMIT}")
+
 add_library(ytdlp SHARED
     native/api.cpp
     native/bridge.cpp
@@ -54,6 +75,8 @@ target_link_libraries(ytdlp PRIVATE Python::Python)
 target_compile_definitions(ytdlp PRIVATE
     LIBYTDLP_BRIDGE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/python"
     LIBYTDLP_YTDLP_DIR="${CMAKE_CURRENT_SOURCE_DIR}/third_party/yt-dlp"
+    LIBYTDLP_DEPLOYMENT_PROFILE="${LIBYTDLP_DEPLOYMENT_PROFILE}"
+    LIBYTDLP_YTDLP_COMMIT="${LIBYTDLP_YTDLP_COMMIT}"
 )
 set_target_properties(ytdlp PROPERTIES
     OUTPUT_NAME ytdlp

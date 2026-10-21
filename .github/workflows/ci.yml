@@ -65,9 +65,11 @@ jobs:
         run: |
           cmake -S . -B build -G Ninja
           cmake --build build --parallel
+      - name: Install nightly rustfmt
+        run: rustup toolchain install nightly --profile minimal --component rustfmt
       - name: Check formatting
         working-directory: bindings/rust
-        run: cargo fmt --check
+        run: cargo +nightly fmt --check
       - name: Clippy
         working-directory: bindings/rust
         run: cargo clippy --locked --all-targets -- -D warnings

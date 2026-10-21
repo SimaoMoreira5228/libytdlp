@@ -57,6 +57,8 @@ LY_API ly_status ly_extract(
     ly_error** error
 ) LY_NOEXCEPT;
 
+LY_API ly_status ly_version_info(ly_result** out, ly_error** error) LY_NOEXCEPT;
+
 LY_API ly_status
 ly_result_json(const ly_result* result, const char** data, size_t* len) LY_NOEXCEPT;
 LY_API void ly_result_release(ly_result* result) LY_NOEXCEPT;

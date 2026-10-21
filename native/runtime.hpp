@@ -14,14 +14,16 @@ class Runtime {
     Runtime& operator=(const Runtime&) = delete;
 
     bool ensure(const char* bridge_dir, const char* ytdlp_dir, std::string& error);
+    bool host_owned() const;
     std::mutex& serial();
 
   private:
     Runtime() = default;
 
-    std::mutex mutex_;
+    mutable std::mutex mutex_;
     std::mutex serial_;
     bool ready_ = false;
+    bool host_owned_ = false;
 };
 
 } // namespace libytdlp

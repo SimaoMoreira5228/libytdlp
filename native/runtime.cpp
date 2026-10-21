@@ -58,6 +58,11 @@ std::mutex& Runtime::serial() {
     return serial_;
 }
 
+bool Runtime::host_owned() const {
+    std::lock_guard<std::mutex> init(mutex_);
+    return host_owned_;
+}
+
 bool Runtime::ensure(const char* bridge_dir, const char* ytdlp_dir, std::string& error) {
     std::lock_guard<std::mutex> call(serial_);
     std::lock_guard<std::mutex> init(mutex_);
@@ -81,6 +86,7 @@ bool Runtime::ensure(const char* bridge_dir, const char* ytdlp_dir, std::string&
         return false;
     }
 
+    host_owned_ = !owned;
     ready_ = true;
     return true;
 }

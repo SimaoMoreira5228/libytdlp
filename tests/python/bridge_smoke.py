@@ -45,6 +45,19 @@ def check_rejects_non_object_options():
     raise AssertionError("non-object options were accepted")
 
 
+def check_runtime_info():
+    from libytdlp_bridge import runtime_info
+
+    info = json.loads(runtime_info("FULL_BUNDLED", "abc123", 1, False))
+    assert info["backend"] == "embedded"
+    assert info["deployment_profile"] == "FULL_BUNDLED"
+    assert info["ytdlp_commit"] == "abc123"
+    assert info["abi"] == 1
+    assert info["host_owned"] is False
+    assert info["yt_dlp"], "empty yt-dlp version"
+    print("runtime info ok")
+
+
 def check_unsupported_url():
     try:
         extract_json("ly-bogus://no-such-scheme-xyz", "{}")
@@ -60,5 +73,6 @@ if __name__ == "__main__":
     check_dumps_round_trip()
     check_rejects_empty_url()
     check_rejects_non_object_options()
+    check_runtime_info()
     check_unsupported_url()
     print("bridge ok")

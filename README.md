@@ -71,6 +71,16 @@ Python-side failures surface as `LY_E_EXTRACT`. Bad JSON or empty URLs are `LY_E
 
 `./dev test` runs everything offline. UBSan is clean. AddressSanitizer trips over a system crypto library yt-dlp pulls in, that's their `dlopen` flags fighting the sanitizer, not our code. So CI runs UBSan only.
 
+## Profiles
+
+Three ways to run this, same API in all of them.
+
+`FULL_BUNDLED` is the default and the one you want for shipping apps. Pinned yt-dlp travels with the library, no user installs. `BUNDLED_YTDLP_SYSTEM_PYTHON` uses the distro Python instead. `SYSTEM_YTDLP_SYSTEM_PYTHON` leans on whatever the machine already has. Good for development. You own the version match there.
+
+Set it at configure time: `cmake -DLIBYTDLP_DEPLOYMENT_PROFILE=BUNDLED_YTDLP_SYSTEM_PYTHON`. Ask the library what it ended up with through `ly_version_info`, or `runtime_info()` in Rust. Same JSON either way.
+
+FFmpeg is never bundled. yt-dlp finds `ffmpeg` on `PATH` like always, or you hand a location to one context through the normal options. A missing FFmpeg only breaks the operations that need it. Nothing else.
+
 ## Layout
 
 ```
@@ -102,7 +112,7 @@ let info = client.extract("https://example.org/media")?;
 println!("{}", info.title().unwrap_or("unknown"));
 ```
 
-Options are a JSON string passed straight to `YoutubeDL`, same as the C API. Offline tests run by default. Set `LIBYTDLP_TEST_URL` and the suite hits the network too, just like the C smoke test.
+Options are a JSON string passed straight to `YoutubeDL`, same as the C API. Offline tests run by default. Set `LIBYTDLP_TEST_URL` and the suite hits the network too, just like the C smoke test. `runtime_info()` reports backend versions, the deployment profile, and whether the interpreter is host-owned.
 
 CMake can build the crates as part of the unified build with `-DLIBYTDLP_BUILD_RUST=ON` (pinned Corrosion). Off by default. Plain `cargo build` never needs CMake or Corrosion.
 

@@ -1,6 +1,3 @@
-use std::ffi::c_char;
-use std::ptr;
-
 use libytdlp_sys as sys;
 
 use crate::error::Error;
@@ -30,38 +27,11 @@ impl MediaInfo {
     }
 
     pub(crate) fn from_raw(result: *mut sys::LyResult) -> Result<Self, Error> {
-        struct Guard(*mut sys::LyResult);
+        let text = crate::read_result_json(result)?;
 
-        impl Drop for Guard {
-            fn drop(&mut self) {
-                unsafe {
-                    sys::ly_result_release(self.0);
-                }
-            }
-        }
-
-        let guard = Guard(result);
-
-        let mut data: *const c_char = ptr::null();
-        let mut len: usize = 0;
-
-        let status = unsafe { sys::ly_result_json(guard.0, &mut data, &mut len) };
-
-        if status != sys::LY_OK || data.is_null() {
-            return Err(Error::new(Kind::Internal, "could not read result JSON"));
-        }
-
-        let bytes = unsafe { std::slice::from_raw_parts(data.cast::<u8>(), len) };
-
-        let text = std::str::from_utf8(bytes)
-            .map_err(|_| Error::new(Kind::Internal, "result JSON is not valid UTF-8"))?;
-
-        let value: serde_json::Value = serde_json::from_str(text)
+        let value: serde_json::Value = serde_json::from_str(&text)
             .map_err(|failed| Error::new(Kind::Internal, failed.to_string()))?;
 
-        Ok(Self {
-            raw: text.to_owned(),
-            value,
-        })
+        Ok(Self { raw: text, value })
     }
 }

@@ -25,6 +25,7 @@ static void check_null_handling(void) {
     assert(ly_result_json(NULL, NULL, NULL) == LY_E_INVALID_ARGUMENT);
     assert(ly_error_code(NULL) == LY_E_INVALID_ARGUMENT);
     assert(ly_error_message(NULL) == NULL);
+    assert(ly_version_info(NULL, NULL) == LY_E_INVALID_ARGUMENT);
 
     ly_result_release(NULL);
     ly_error_release(NULL);
@@ -114,6 +115,23 @@ static void check_concurrent_extract(void) {
     assert(ly_context_release(context) == LY_OK);
 }
 
+static void check_version_info(void) {
+    ly_result* result = NULL;
+    ly_error* error = NULL;
+    assert(ly_version_info(&result, &error) == LY_OK);
+    assert(result != NULL);
+
+    const char* data = NULL;
+    size_t len = 0;
+    assert(ly_result_json(result, &data, &len) == LY_OK);
+    assert(data != NULL);
+    assert(len > 50);
+    assert(strstr(data, "deployment_profile") != NULL);
+    assert(strstr(data, "FULL_BUNDLED") != NULL);
+    printf("version info ok: %zu bytes of json\n", len);
+    ly_result_release(result);
+}
+
 static void check_network_url(void) {
     const char* url = getenv("LIBYTDLP_TEST_URL");
     if (url == NULL || url[0] == '\0') {
@@ -166,6 +184,9 @@ int main(void) {
 
     check_concurrent_extract();
     printf("concurrent extract ok\n");
+
+    check_version_info();
+    printf("version info ok\n");
 
     check_network_url();
 

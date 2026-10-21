@@ -210,6 +210,42 @@ ly_status ly_extract(
     }
 }
 
+ly_status ly_version_info(ly_result** out, ly_error** error) noexcept {
+    try {
+        if (out == nullptr) {
+            store_error(error, make_error(LY_E_INVALID_ARGUMENT, "out must not be null"));
+            return LY_E_INVALID_ARGUMENT;
+        }
+        *out = nullptr;
+
+        if (error != nullptr) {
+            *error = nullptr;
+        }
+
+        if (!ensure_runtime(error)) {
+            return LY_E_RUNTIME;
+        }
+
+        libytdlp::BridgeResult called = libytdlp::runtime_info_json();
+        if (!called.ok) {
+            store_error(error, make_error(called.status, called.message));
+            return called.status;
+        }
+
+        auto result = std::make_unique<LyResult>();
+        result->json = std::move(called.json);
+
+        *out = reinterpret_cast<ly_result*>(result.release());
+        return LY_OK;
+    } catch (const std::exception& caught) {
+        report(error, LY_E_INTERNAL, caught.what());
+        return LY_E_INTERNAL;
+    } catch (...) {
+        report(error, LY_E_INTERNAL, "unknown version query failure");
+        return LY_E_INTERNAL;
+    }
+}
+
 ly_status ly_result_json(const ly_result* result, const char** data, size_t* len) noexcept {
     if (result == nullptr || data == nullptr || len == nullptr) {
         return LY_E_INVALID_ARGUMENT;

@@ -17,9 +17,22 @@ is Apache-2.0 (see LICENSE). Nothing below is relicensed by us.
 ## CPython
 
 - License: Python Software Foundation License plus bundled notices.
-- System-runtime mode links whatever CPython CMake finds (3.11+).
+- System-runtime profiles link whatever CPython CMake finds (3.10+).
   Bundled-runtime packaging does not exist yet; when it does, ship the
   PSF license text with it.
+
+## Runtime dependency policy
+
+- libytdlp never vendors, compiles, or redistributes FFmpeg/ffprobe.
+  Every profile uses an external executable found on `PATH` or passed
+  per context. Keep FFmpeg out of artifact SBOMs; it may appear in a
+  separate external-dependency manifest.
+- `mutagen` (GPL-2.0-or-later per yt-dlp's dependency listing) ships
+  in no default bundle. Features that need it get a system/optional
+  package plus a documented gap, not a silent downgrade.
+- `certifi` (MPL-2.0) only matters when actually shipped; track its
+  covered files then.
+- Corrosion (MIT) is a build-time tool and is not shipped.
 
 ## Test/dev environment (uv)
 

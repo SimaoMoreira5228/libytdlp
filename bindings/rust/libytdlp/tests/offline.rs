@@ -1,6 +1,8 @@
 use libytdlp::Client;
 use libytdlp::Kind;
 use libytdlp::MediaInfo;
+use libytdlp::abi_version;
+use libytdlp::runtime_info;
 
 fn assert_send_sync<T>()
 where
@@ -57,6 +59,20 @@ fn create_drop_loop() {
 
         std::hint::black_box(&client);
     }
+}
+
+#[test]
+fn runtime_info_reports_diagnostics() {
+    let info = runtime_info().expect("runtime info must succeed");
+
+    assert_eq!(info.abi(), abi_version());
+    assert_eq!(info.backend(), "embedded");
+    assert!(!info.profile().is_empty());
+    assert!(!info.python().is_empty());
+    assert!(!info.ytdlp_version().is_empty());
+    assert!(!info.ytdlp_commit().is_empty());
+    assert!(!info.raw_json().is_empty());
+    assert!(info.value().is_object());
 }
 
 #[test]

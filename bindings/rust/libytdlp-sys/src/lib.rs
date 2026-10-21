@@ -44,6 +44,8 @@ unsafe extern "C" {
 
     pub fn ly_result_release(result: *mut LyResult);
 
+    pub fn ly_version_info(out: *mut *mut LyResult, error: *mut *mut LyError) -> c_uint;
+
     pub fn ly_error_code(error: *const LyError) -> c_uint;
 
     pub fn ly_error_message(error: *const LyError) -> *const c_char;

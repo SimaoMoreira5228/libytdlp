@@ -15,6 +15,7 @@ struct BridgeResult {
 };
 
 BridgeResult extract_json(const std::string& url, const std::string& options);
+BridgeResult runtime_info_json();
 
 } // namespace libytdlp
 

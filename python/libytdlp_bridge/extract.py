@@ -57,3 +57,14 @@ def versions():
             "python": platform.python_version(),
         }
     )
+
+
+def runtime_info(profile, ytdlp_commit, abi, host_owned):
+    versions_info = json.loads(versions())
+    versions_info["wrapper"] = BRIDGE_VERSION
+    versions_info["backend"] = "embedded"
+    versions_info["deployment_profile"] = profile
+    versions_info["ytdlp_commit"] = ytdlp_commit
+    versions_info["abi"] = int(abi)
+    versions_info["host_owned"] = bool(host_owned)
+    return json.dumps(versions_info, ensure_ascii=True, separators=(",", ":"))
