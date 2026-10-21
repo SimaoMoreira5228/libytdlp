@@ -1,0 +1,12 @@
+Checks: >
+  -*,
+  bugprone-*,
+  -bugprone-easily-swappable-parameters,
+  clang-analyzer-*,
+  -clang-analyzer-optin.core.EnumCastOutOfRange,
+  performance-*,
+  -performance-enum-size,
+  portability-*
+WarningsAsErrors: '*'
+HeaderFilterRegex: '.*(include/libytdlp|native|tests)/'
+FormatStyle: file

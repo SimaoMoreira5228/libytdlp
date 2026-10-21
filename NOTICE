@@ -1,0 +1,8 @@
+libytdlp
+========
+
+libytdlp's own code (C++ bridge, C headers, Python adapter, bindings,
+tests, build scripts, docs) is Apache-2.0. See LICENSE.
+
+Bundled or referenced third-party components keep their own licenses.
+See THIRD_PARTY_NOTICES.md.

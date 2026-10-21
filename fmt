@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$repo_root"
+
+format_args=(-i)
+if [[ "${1:-}" == "--check" ]]; then
+    format_args=(--dry-run --Werror)
+elif (($#)); then
+    echo "usage: ./fmt [--check]" >&2
+    exit 2
+fi
+
+mapfile -d '' files < <(
+    git ls-files -z --cached --others --exclude-standard \
+        | while IFS= read -r -d '' path; do
+            case "$path" in
+                *.c|*.cc|*.cpp|*.cxx|*.h|*.hh|*.hpp|*.hxx)
+                    [[ "$path" == third_party/* ]] || printf '%s\0' "$path"
+                    ;;
+            esac
+        done
+)
+
+if ((${#files[@]})); then
+    clang-format "${format_args[@]}" -- "${files[@]}"
+fi

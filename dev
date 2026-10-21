@@ -1,0 +1,110 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+build_dir="${BUILD_DIR:-$repo_root/build}"
+
+configure() {
+    cmake -S "$repo_root" -B "$build_dir" -DCMAKE_EXPORT_COMPILE_COMMANDS=ON "$@"
+}
+
+cmd="${1:-help}"
+shift || true
+
+case "$cmd" in
+    setup)
+        echo "Build prerequisites: CMake 3.22+, a C++23 compiler, and Ninja or Make."
+        echo "Python 3.11+ via uv (uv sync provides the pinned yt-dlp test env)."
+        echo "Formatting uses clang-format; linting also needs clang-tidy and Python 3."
+        ;;
+    configure)
+        configure "$@"
+        ;;
+    build)
+        configure
+        cmake --build "$build_dir" "$@"
+        ;;
+    test)
+        configure
+        cmake --build "$build_dir" --parallel
+        ctest --test-dir "$build_dir" --output-on-failure "$@"
+        ;;
+    cover)
+        configure -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS="--coverage" -DCMAKE_EXE_LINKER_FLAGS="--coverage"
+        cmake --build "$build_dir" --parallel
+        ctest --test-dir "$build_dir" --output-on-failure "$@"
+        ;;
+    run)
+        target="${1:-ly_smoke}"
+        if (($#)); then shift; fi
+        configure
+        cmake --build "$build_dir" --target "$target"
+        executable="$build_dir/$target"
+        if [[ ! -x "$executable" && -x "$build_dir/tests/native/$target" ]]; then
+            executable="$build_dir/tests/native/$target"
+        fi
+        exec "$executable" "$@"
+        ;;
+    pysync)
+        uv sync
+        ;;
+    py)
+        exec uv run --no-sync python "$@"
+        ;;
+    format)
+        "$repo_root/fmt"
+        ;;
+    format-check)
+        "$repo_root/fmt" --check
+        ;;
+    lint)
+        configure
+        command -v clang-tidy >/dev/null || {
+            echo "clang-tidy is required for lint" >&2
+            exit 1
+        }
+        command -v python3 >/dev/null || {
+            echo "Python 3 is required to read CMake's compile database" >&2
+            exit 1
+        }
+        cmake --build "$build_dir" --parallel
+        lint_jobs="${JOBS:-4}"
+        if [[ ! "$lint_jobs" =~ ^[1-9][0-9]*$ ]]; then
+            echo "JOBS must be a positive integer" >&2
+            exit 2
+        fi
+        python3 - "$build_dir/compile_commands.json" <<'PY' \
+            | xargs -0 -r -n 1 -P "$lint_jobs" clang-tidy --quiet -p "$build_dir"
+import json
+import os
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as database:
+    commands = json.load(database)
+
+seen = set()
+for command in commands:
+    source = os.path.abspath(os.path.join(command["directory"], command["file"]))
+    if source not in seen and source.endswith((".c", ".cc", ".cpp", ".cxx")):
+        seen.add(source)
+        sys.stdout.buffer.write(os.fsencode(source) + b"\0")
+PY
+        ;;
+    ide)
+        configure "$@"
+        echo "Compile database: $build_dir/compile_commands.json"
+        ;;
+    lines)
+        git -C "$repo_root" ls-files -z --cached --others --exclude-standard | xargs -0 wc -l
+        ;;
+    *)
+        cat << USAGE
+usage: ./dev setup|configure|build|test|cover|run [target] [args...]|pysync|py [args...]|format|format-check|lint|ide|lines
+
+Set BUILD_DIR to use a different CMake build directory.
+USAGE
+        if [[ "$cmd" != help ]]; then
+            exit 2
+        fi
+        ;;
+esac

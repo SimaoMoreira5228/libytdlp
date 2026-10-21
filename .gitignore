@@ -1,0 +1,10 @@
+local/
+.opencode/
+build/
+__pycache__/
+*.pyc
+.venv/
+*.so
+*.dylib
+*.dll
+compile_commands.json
