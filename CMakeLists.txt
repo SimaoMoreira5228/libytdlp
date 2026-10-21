@@ -1,6 +1,12 @@
 cmake_minimum_required(VERSION 3.22)
 
-project(libytdlp VERSION 0.1.0 LANGUAGES C CXX)
+file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/VERSION" LIBYTDLP_VERSION_RAW LIMIT_COUNT 1)
+string(STRIP "${LIBYTDLP_VERSION_RAW}" LIBYTDLP_VERSION_RAW)
+if(LIBYTDLP_VERSION_RAW STREQUAL "")
+    message(FATAL_ERROR "VERSION file is empty or missing: ${CMAKE_CURRENT_SOURCE_DIR}/VERSION")
+endif()
+
+project(libytdlp VERSION ${LIBYTDLP_VERSION_RAW} LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -57,9 +63,16 @@ endif()
 message(STATUS "Deployment profile: ${LIBYTDLP_DEPLOYMENT_PROFILE}")
 message(STATUS "yt-dlp commit: ${LIBYTDLP_YTDLP_COMMIT}")
 
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/include/libytdlp/version.h.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/generated/include/libytdlp/version.h"
+    @ONLY
+)
+
 add_library(ytdlp SHARED
     native/api.cpp
     native/bridge.cpp
+    native/install_dirs.cpp
     native/jobs.cpp
     native/runtime.cpp
 )
@@ -68,6 +81,7 @@ add_library(libytdlp::ytdlp ALIAS ytdlp)
 add_library(ytdlp_static STATIC
     native/api.cpp
     native/bridge.cpp
+    native/install_dirs.cpp
     native/jobs.cpp
     native/runtime.cpp
 )
@@ -77,6 +91,7 @@ foreach(target ytdlp ytdlp_static)
     target_include_directories(${target}
         PUBLIC
             $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+            $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/generated/include>
             $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
         PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}/native
@@ -136,7 +151,24 @@ install(TARGETS ytdlp ytdlp_static
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
-install(DIRECTORY include/libytdlp DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+install(DIRECTORY include/libytdlp DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+    PATTERN "version.h.in" EXCLUDE
+)
+install(
+    FILES "${CMAKE_CURRENT_BINARY_DIR}/generated/include/libytdlp/version.h"
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/libytdlp
+)
+install(DIRECTORY python/libytdlp_bridge DESTINATION share/libytdlp/python
+    PATTERN "__pycache__" EXCLUDE
+    PATTERN "*.pyc" EXCLUDE
+)
+install(
+    DIRECTORY third_party/yt-dlp/
+    DESTINATION share/libytdlp/yt-dlp
+    PATTERN ".git*" EXCLUDE
+    PATTERN "__pycache__" EXCLUDE
+    PATTERN "*.pyc" EXCLUDE
+)
 install(EXPORT libytdlp-targets
     NAMESPACE libytdlp::
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/libytdlp
@@ -146,7 +178,10 @@ if(BUILD_TESTING)
     find_program(UV_EXECUTABLE NAMES uv REQUIRED)
 
     add_executable(ly_smoke tests/native/smoke.c)
-    target_include_directories(ly_smoke PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+    target_include_directories(ly_smoke PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${CMAKE_CURRENT_BINARY_DIR}/generated/include
+    )
     target_link_libraries(ly_smoke PRIVATE ytdlp Threads::Threads)
     target_compile_definitions(ly_smoke PRIVATE
         LIBYTDLP_TEST_PYTHON="${Python_EXECUTABLE}"
@@ -154,10 +189,16 @@ if(BUILD_TESTING)
     )
 
     add_library(ly_header_check_c OBJECT tests/native/header_check.c)
-    target_include_directories(ly_header_check_c PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+    target_include_directories(ly_header_check_c PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${CMAKE_CURRENT_BINARY_DIR}/generated/include
+    )
 
     add_library(ly_header_check_cxx OBJECT tests/native/header_check.cpp)
-    target_include_directories(ly_header_check_cxx PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+    target_include_directories(ly_header_check_cxx PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${CMAKE_CURRENT_BINARY_DIR}/generated/include
+    )
 
     if(LIBYTDLP_SANITIZERS)
         target_compile_options(ly_smoke PRIVATE -fsanitize=${LIBYTDLP_SANITIZER_FLAGS}

@@ -106,3 +106,19 @@ if(NOT run_result EQUAL 0)
 endif()
 
 message(STATUS "staged smoke output:\n${run_output}")
+
+execute_process(
+  COMMAND "${CMAKE_COMMAND}" -E env
+    --unset=LIBYTDLP_BRIDGE_DIR
+    --unset=LIBYTDLP_YTDLP_DIR
+    "${staged_binary}"
+  RESULT_VARIABLE run_bare_result
+  OUTPUT_VARIABLE run_bare_output
+  ERROR_VARIABLE run_bare_output
+)
+
+if(NOT run_bare_result EQUAL 0)
+  message(FATAL_ERROR "staged smoke run without env failed:\n${run_bare_output}")
+endif()
+
+message(STATUS "staged smoke output without env:\n${run_bare_output}")

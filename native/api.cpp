@@ -2,11 +2,13 @@
 
 #include <cstdlib>
 #include <exception>
+#include <filesystem>
 #include <memory>
 #include <new>
 #include <string>
 
 #include "bridge.hpp"
+#include "install_dirs.hpp"
 #include "jobs.hpp"
 #include "runtime.hpp"
 
@@ -25,10 +27,48 @@ struct LyError {
     std::string message;
 };
 
+std::string installed_share_dir() {
+    static const std::string cached = [] {
+        std::string self = libytdlp::module_dir();
+
+        if (self.empty()) {
+            return std::string();
+        }
+
+        std::filesystem::path candidate = std::filesystem::path(self) / ".." / "share" / "libytdlp";
+
+        std::filesystem::path marker = candidate / "python" / "libytdlp_bridge" / "__init__.py";
+
+        std::error_code code;
+
+        bool present = std::filesystem::exists(marker, code);
+
+        if (code) {
+            return std::string();
+        }
+
+        if (!present) {
+            return std::string();
+        }
+
+        return candidate.lexically_normal().string();
+    }();
+
+    return cached;
+}
+
 std::string bridge_dir() {
     const char* from_env = std::getenv("LIBYTDLP_BRIDGE_DIR");
     if (from_env != nullptr) {
         return from_env;
+    }
+
+    std::string share = installed_share_dir();
+
+    if (!share.empty()) {
+        std::filesystem::path bridge = std::filesystem::path(share) / "python";
+
+        return bridge.string();
     }
 
 #ifdef LIBYTDLP_BRIDGE_DIR
@@ -42,6 +82,14 @@ std::string ytdlp_dir() {
     const char* from_env = std::getenv("LIBYTDLP_YTDLP_DIR");
     if (from_env != nullptr) {
         return from_env;
+    }
+
+    std::string share = installed_share_dir();
+
+    if (!share.empty()) {
+        std::filesystem::path ytdlp = std::filesystem::path(share) / "yt-dlp";
+
+        return ytdlp.string();
     }
 
 #ifdef LIBYTDLP_YTDLP_DIR
