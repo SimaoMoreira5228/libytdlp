@@ -165,6 +165,21 @@ Options are a JSON string passed straight to `YoutubeDL`, same as the C API. Off
 
 CMake can build the crates as part of the unified build with `-DLIBYTDLP_BUILD_RUST=ON` (pinned Corrosion). Off by default. Plain `cargo build` never needs CMake or Corrosion.
 
+## Resolve example
+
+`examples/resolve` is the whole flow in one binary: extract a URL, pick the best audio-only stream, print it.
+
+```bash
+cmake -S . -B build
+cmake --build build
+cd examples/resolve
+LIBYTDLP_LIB_DIR=/path/to/repo/build cargo run -- https://example.org/media
+```
+
+It prints `title`, `duration_secs`, `uploader`, and `url`, one `key=value` per line. Audio-only means a format with an audio codec and no video codec, highest bitrate wins. If nothing qualifies, it falls back to the first format with a URL.
+
+No extra crates, just `std` and `libytdlp`. To try it offline, serve a file with `tests/fixtures/slow_server.py` and point it at that. `cargo test` in that directory does exactly that against the fixture server.
+
 ## Pins
 
 - yt-dlp `2026.08.19`, submodule at `third_party/yt-dlp`, unmodified.

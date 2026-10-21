@@ -25,6 +25,10 @@ impl Format {
         self.value.get("acodec")?.as_str()
     }
 
+    pub fn vcodec(&self) -> Option<&str> {
+        self.value.get("vcodec")?.as_str()
+    }
+
     pub fn asr(&self) -> Option<u64> {
         self.value.get("asr")?.as_u64()
     }

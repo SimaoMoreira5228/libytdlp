@@ -5,6 +5,7 @@ __pycache__/
 *.pyc
 .venv/
 bindings/rust/target/
+examples/resolve/target/
 *.so
 *.dylib
 *.dll

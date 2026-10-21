@@ -83,12 +83,29 @@ def check_unsupported_url():
     raise AssertionError("unsupported url was accepted")
 
 
+def check_extractor_args_passthrough():
+    from libytdlp_bridge.extract import _params
+    from yt_dlp import YoutubeDL
+
+    options = {"extractor_args": {"youtube": {"player_client": ["ios"]}}}
+
+    params = _params(options)
+
+    assert params["extractor_args"] == {"youtube": {"player_client": ["ios"]}}
+
+    with YoutubeDL(params) as ydl:
+        assert ydl.params["extractor_args"] == {"youtube": {"player_client": ["ios"]}}
+
+    print("extractor args passthrough ok")
+
+
 if __name__ == "__main__":
     check_versions()
     check_dumps_round_trip()
     check_rejects_empty_url()
     check_rejects_non_object_options()
     check_cachedir_defaults_off()
+    check_extractor_args_passthrough()
     check_runtime_info()
     check_unsupported_url()
     print("bridge ok")

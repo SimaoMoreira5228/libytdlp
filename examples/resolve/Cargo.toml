@@ -1,0 +1,14 @@
+[package]
+name = "resolve"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+license = "Apache-2.0"
+description = "Pick the best audio-only stream for a URL using libytdlp"
+
+[[bin]]
+name = "resolve"
+path = "src/main.rs"
+
+[dependencies]
+libytdlp = { path = "../../bindings/rust/libytdlp" }

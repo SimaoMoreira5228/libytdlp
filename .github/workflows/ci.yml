@@ -81,3 +81,10 @@ jobs:
         env:
           LIBYTDLP_LIB_DIR: ${{ github.workspace }}/build
         run: cargo test --locked
+      - name: Build and test resolve example
+        working-directory: examples/resolve
+        env:
+          LIBYTDLP_LIB_DIR: ${{ github.workspace }}/build
+        run: |
+          cargo build --locked
+          cargo test --locked
