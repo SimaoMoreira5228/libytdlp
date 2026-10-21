@@ -87,6 +87,7 @@ fn bad_options_json_fails_as_invalid_argument() {
 
     assert_eq!(error.kind(), Kind::InvalidArgument);
     assert!(!error.message().is_empty());
+    assert!(!error.is_retryable());
 }
 
 #[test]
@@ -98,6 +99,7 @@ fn empty_url_fails() {
 
         assert_eq!(error.kind(), Kind::InvalidArgument);
         assert!(!error.message().is_empty());
+        assert!(!error.is_retryable());
     }
 }
 

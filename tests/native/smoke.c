@@ -73,6 +73,8 @@ static void check_null_handling(void) {
     ly_result_release(NULL);
     ly_error_release(NULL);
 
+    assert(ly_error_is_retryable(NULL) == false);
+
     assert(ly_context_create(NULL, 0, &context, NULL) == LY_OK);
     assert(context != NULL);
     assert(ly_extract(context, NULL, 0, NULL, 0, &result, NULL) == LY_E_INVALID_ARGUMENT);
@@ -106,6 +108,7 @@ static void check_bad_options(void) {
     assert(ly_error_code(error) == LY_E_INVALID_ARGUMENT);
     assert(ly_error_message(error) != NULL);
     assert(strlen(ly_error_message(error)) > 0);
+    assert(ly_error_is_retryable(error) == false);
     ly_error_release(error);
     error = NULL;
 
@@ -139,6 +142,7 @@ static void check_unsupported_url(void) {
     assert(result == NULL);
     assert(error != NULL);
     assert(ly_error_message(error) != NULL);
+    assert(ly_error_is_retryable(error) == false);
     printf("unsupported url -> code %d: %s\n", ly_error_code(error), ly_error_message(error));
     ly_error_release(error);
 

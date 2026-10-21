@@ -59,6 +59,8 @@ unsafe extern "C" {
 
     pub fn ly_error_message(error: *const LyError) -> *const c_char;
 
+    pub fn ly_error_is_retryable(error: *const LyError) -> bool;
+
     pub fn ly_error_details_json(
         error: *const LyError,
         data: *mut *const c_char,

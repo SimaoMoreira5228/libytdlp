@@ -117,6 +117,7 @@ fn bogus_url_job_fails_as_extract() {
     assert_eq!(error.kind(), Kind::Extract);
     assert!(!error.message().is_empty());
     assert!(error.exception_class().is_some());
+    assert!(!error.is_retryable());
 
     let error = job.wait().expect_err("wait must be idempotent");
 
@@ -154,6 +155,7 @@ fn slow_download_cancels() {
     let error = job.wait().expect_err("cancelled job must fail");
 
     assert_eq!(error.kind(), Kind::Cancelled);
+    assert!(!error.is_retryable());
 
     let error = job.wait().expect_err("wait must be idempotent");
 
@@ -270,4 +272,65 @@ fn release_joins_running_job() {
     let _ = std::fs::remove_dir_all(parent);
 
     let _ = server;
+}
+
+fn closed_port() -> u16 {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("loopback bind must succeed");
+
+    listener
+        .local_addr()
+        .expect("bound socket must have an address")
+        .port()
+}
+
+#[test]
+fn closed_port_download_fails_as_non_retryable_network_error() {
+    let scrubbed = [
+        "http_proxy",
+        "https_proxy",
+        "all_proxy",
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "ALL_PROXY",
+    ];
+
+    let saved: Vec<(String, Option<String>)> = scrubbed
+        .iter()
+        .map(|name| {
+            let previous = std::env::var(name).ok();
+            unsafe { std::env::remove_var(name) };
+            (name.to_string(), previous)
+        })
+        .collect();
+
+    unsafe { std::env::set_var("no_proxy", "*") };
+    unsafe { std::env::set_var("NO_PROXY", "*") };
+
+    let port = closed_port();
+
+    let (target, options) = temp_output("closed");
+    let client = Client::new(&options).expect("options must be accepted");
+
+    let job = client
+        .download(&format!("http://127.0.0.1:{port}/file.bin"), "{}")
+        .expect("job must start");
+
+    let error = job.wait().expect_err("closed port must fail");
+
+    assert_eq!(error.kind(), Kind::Network);
+    assert!(error.is_retryable());
+
+    let parent = target.parent().expect("output must have a parent");
+    let _ = std::fs::remove_dir_all(parent);
+
+    for (name, previous) in saved {
+        if let Some(value) = previous {
+            unsafe { std::env::set_var(name, value) };
+        } else {
+            unsafe { std::env::remove_var(name) };
+        }
+    }
+
+    unsafe { std::env::remove_var("no_proxy") };
+    unsafe { std::env::remove_var("NO_PROXY") };
 }

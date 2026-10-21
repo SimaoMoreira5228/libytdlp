@@ -46,6 +46,7 @@ pub struct Error {
     kind: Kind,
     message: String,
     exception_class: Option<String>,
+    retryable: bool,
 }
 
 impl Error {
@@ -61,6 +62,10 @@ impl Error {
         self.exception_class.as_deref()
     }
 
+    pub fn is_retryable(&self) -> bool {
+        self.retryable
+    }
+
     pub(crate) fn log(&self) {
         tracing::debug!(kind = self.kind.as_str(), "libytdlp call failed");
     }
@@ -70,6 +75,7 @@ impl Error {
             kind,
             message: message.into(),
             exception_class: None,
+            retryable: false,
         }
     }
 
@@ -121,6 +127,7 @@ impl Error {
         };
 
         let exception_class = Self::read_exception_class(error);
+        let retryable = unsafe { sys::ly_error_is_retryable(error) };
 
         unsafe {
             sys::ly_error_release(error);
@@ -133,6 +140,11 @@ impl Error {
                 .with_class(exception_class)
         } else {
             Self::new(kind, text).with_class(exception_class)
+        };
+
+        let failure = Self {
+            retryable,
+            ..failure
         };
         failure.log();
 

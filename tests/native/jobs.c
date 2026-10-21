@@ -174,6 +174,7 @@ static void check_job_bogus_url(void) {
     assert(out == NULL);
     assert(error != NULL);
     assert(ly_error_code(error) == LY_E_EXTRACT);
+    assert(ly_error_is_retryable(error) == false);
     printf("bogus download -> code %d: %s\n", ly_error_code(error), ly_error_message(error));
 
     const char* details = NULL;
@@ -269,6 +270,7 @@ static void check_job_cancel(void) {
     assert(out == NULL);
     assert(error != NULL);
     assert(ly_error_code(error) == LY_E_CANCELLED);
+    assert(ly_error_is_retryable(error) == false);
     printf("cancelled download -> code %d: %s\n", ly_error_code(error), ly_error_message(error));
     ly_error_release(error);
     error = NULL;
@@ -533,6 +535,7 @@ static void check_job_closed_port_network(void) {
     assert(out == NULL);
     assert(error != NULL);
     assert(ly_error_code(error) == LY_E_NETWORK);
+    assert(ly_error_is_retryable(error) == true);
 
     const char* details = NULL;
     size_t details_len = 0;

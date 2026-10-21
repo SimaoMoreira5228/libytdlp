@@ -568,6 +568,20 @@ const char* ly_error_message(const ly_error* error) noexcept {
     return reinterpret_cast<const LyError*>(error)->message.c_str();
 }
 
+bool ly_error_is_retryable(const ly_error* error) noexcept {
+    if (error == nullptr) {
+        return false;
+    }
+
+    switch (reinterpret_cast<const LyError*>(error)->code) {
+    case LY_E_NETWORK:
+    case LY_E_BUSY:
+        return true;
+    default:
+        return false;
+    }
+}
+
 void ly_error_release(ly_error* error) noexcept {
     delete reinterpret_cast<LyError*>(error);
 }
