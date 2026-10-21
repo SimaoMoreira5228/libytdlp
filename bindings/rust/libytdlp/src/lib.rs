@@ -12,6 +12,9 @@ mod runtime;
 
 pub use client::Client;
 pub use client::ClientBuilder;
+pub use client::PlayerClient;
+pub use client::WaitForExtract;
+pub use client::player_client_options;
 pub use error::{Error, Kind};
 pub use job::{DownloadJob, JobState, WaitForDownload};
 pub use media::Format;

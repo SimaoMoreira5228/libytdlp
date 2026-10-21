@@ -14,6 +14,7 @@ use std::time::Duration;
 
 use libytdlp::Client;
 use libytdlp::WaitForDownload;
+use libytdlp::WaitForExtract;
 
 fn assert_send<T>()
 where
@@ -24,6 +25,7 @@ where
 #[test]
 fn download_future_is_send() {
     assert_send::<WaitForDownload>();
+    assert_send::<WaitForExtract>();
 }
 
 fn block_on<F>(future: F) -> F::Output
@@ -167,6 +169,46 @@ fn async_download_completes() {
 
     let parent = target.parent().expect("output must have a parent");
     let _ = std::fs::remove_dir_all(parent);
+}
+
+#[test]
+fn async_extract_completes() {
+    let server = FixtureServer::start(65536, 8_000_000);
+
+    let client = Client::new("{}").expect("default options must be accepted");
+
+    let info = block_on(client.extract_async(&server.url("/file.bin")))
+        .expect("async extract must succeed");
+
+    assert!(info.raw_json().len() > 100);
+    assert!(info.value().is_object());
+    assert_eq!(info.id(), Some("file"));
+}
+
+#[test]
+fn concurrent_async_extracts_share_client() {
+    let server = FixtureServer::start(65536, 8_000_000);
+    let url = server.url("/file.bin");
+
+    let client = std::sync::Arc::new(Client::new("{}").expect("options must be accepted"));
+
+    let handles: Vec<std::thread::JoinHandle<()>> = (0..4)
+        .map(|_| {
+            let shared = std::sync::Arc::clone(&client);
+            let target = url.clone();
+
+            std::thread::spawn(move || {
+                let info = block_on(shared.extract_async(&target))
+                    .expect("concurrent extract must succeed");
+
+                assert_eq!(info.id(), Some("file"));
+            })
+        })
+        .collect();
+
+    for handle in handles {
+        handle.join().expect("worker thread must not panic");
+    }
 }
 
 #[test]

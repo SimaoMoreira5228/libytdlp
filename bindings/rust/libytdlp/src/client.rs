@@ -1,4 +1,11 @@
+use std::future::Future;
+use std::pin::Pin;
 use std::ptr;
+use std::sync::Arc;
+use std::sync::Mutex;
+use std::task::Context;
+use std::task::Poll;
+use std::task::Waker;
 
 use libytdlp_sys as sys;
 
@@ -7,8 +14,63 @@ use crate::error::Kind;
 use crate::job::DownloadJob;
 use crate::media::MediaInfo;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PlayerClient {
+    Default,
+    Android,
+    TvEmbedded,
+    Ios,
+    Web,
+}
+
+impl PlayerClient {
+    pub const RETRY_ORDER: [PlayerClient; 5] = [
+        PlayerClient::Default,
+        PlayerClient::Android,
+        PlayerClient::TvEmbedded,
+        PlayerClient::Ios,
+        PlayerClient::Web,
+    ];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Default => "default",
+            Self::Android => "android",
+            // NOTE: upstream removed the `tv_embedded` client as broken, so the
+            // embedded slot maps to the supported `web_embedded` client instead.
+            Self::TvEmbedded => "web_embedded",
+            Self::Ios => "ios",
+            Self::Web => "web",
+        }
+    }
+}
+
+pub fn player_client_options<I>(clients: I) -> Vec<String>
+where
+    I: IntoIterator<Item = PlayerClient>,
+{
+    clients
+        .into_iter()
+        .map(|client| {
+            if client == PlayerClient::Default {
+                return "{}".to_owned();
+            }
+
+            serde_json::json!({
+                "extractor_args": {
+                    "youtube": {
+                        "player_client": [client.as_str()],
+                    },
+                },
+            })
+            .to_string()
+        })
+        .collect()
+}
+
 pub struct Client {
     raw: *mut sys::LyContext,
+    options: String,
 }
 
 pub struct ClientBuilder {
@@ -60,6 +122,17 @@ impl ClientBuilder {
         self
     }
 
+    pub fn youtube_player_client(self, client: PlayerClient) -> Self {
+        if client == PlayerClient::Default {
+            return self;
+        }
+
+        self.extractor_args(
+            "youtube",
+            serde_json::json!({"player_client": [client.as_str()]}),
+        )
+    }
+
     pub fn build(self) -> Result<Client, Error> {
         let text = serde_json::to_string(&serde_json::Value::Object(self.options))
             .map_err(|failed| Error::new(Kind::Internal, failed.to_string()))?;
@@ -92,7 +165,10 @@ impl Client {
             return Err(Error::from_ptr(error));
         }
 
-        Ok(Self { raw: context })
+        Ok(Self {
+            raw: context,
+            options: options_json.to_owned(),
+        })
     }
 
     pub fn builder() -> ClientBuilder {
@@ -174,6 +250,17 @@ impl Client {
         MediaInfo::from_raw(result)
     }
 
+    #[tracing::instrument(name = "libytdlp.extract_async", level = "debug", skip(self, url))]
+    pub fn extract_async(&self, url: &str) -> WaitForExtract {
+        WaitForExtract {
+            pending: Some((url.to_owned(), self.options.clone())),
+            shared: Arc::new(Shared {
+                waker: Mutex::new(None),
+                outcome: Mutex::new(None),
+            }),
+        }
+    }
+
     #[tracing::instrument(name = "libytdlp.download", level = "debug", skip(self, url, options))]
     pub fn download(&self, url: &str, options: &str) -> Result<DownloadJob, Error> {
         if url.as_bytes().contains(&0) {
@@ -224,3 +311,74 @@ impl Drop for Client {
 unsafe impl Send for Client {}
 
 unsafe impl Sync for Client {}
+
+struct Shared {
+    waker: Mutex<Option<Waker>>,
+    outcome: Mutex<Option<Result<MediaInfo, Error>>>,
+}
+
+pub struct WaitForExtract {
+    pending: Option<(String, String)>,
+    shared: Arc<Shared>,
+}
+
+impl Future for WaitForExtract {
+    type Output = Result<MediaInfo, Error>;
+
+    fn poll(mut self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Self::Output> {
+        if let Some(outcome) = self.shared.outcome.lock().expect("outcome lock").take() {
+            return Poll::Ready(outcome);
+        }
+
+        *self.shared.waker.lock().expect("waker lock") = Some(context.waker().clone());
+
+        if let Some(outcome) = self.shared.outcome.lock().expect("outcome lock").take() {
+            return Poll::Ready(outcome);
+        }
+
+        let Some((url, options)) = self.pending.take() else {
+            return Poll::Pending;
+        };
+
+        let shared = Arc::clone(&self.shared);
+
+        std::thread::spawn(move || {
+            let outcome = isolated_extract(url, options);
+
+            *shared.outcome.lock().expect("outcome lock") = Some(outcome);
+
+            let waker = shared.waker.lock().expect("waker lock").take();
+
+            if let Some(waker) = waker {
+                waker.wake();
+            }
+        });
+
+        Poll::Pending
+    }
+}
+
+fn isolated_extract(url: String, options: String) -> Result<MediaInfo, Error> {
+    let mut context: *mut sys::LyContext = ptr::null_mut();
+    let mut error: *mut sys::LyError = ptr::null_mut();
+
+    let status = unsafe {
+        sys::ly_context_create(
+            options.as_ptr().cast(),
+            options.len(),
+            &mut context,
+            &mut error,
+        )
+    };
+
+    if status != sys::LY_OK || context.is_null() {
+        return Err(Error::from_ptr(error));
+    }
+
+    let client = Client {
+        raw: context,
+        options,
+    };
+
+    client.extract(&url)
+}

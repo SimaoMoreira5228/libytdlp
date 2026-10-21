@@ -9,7 +9,9 @@ use libytdlp::Client;
 use libytdlp::ClientBuilder;
 use libytdlp::Kind;
 use libytdlp::MediaInfo;
+use libytdlp::PlayerClient;
 use libytdlp::abi_version;
+use libytdlp::player_client_options;
 use libytdlp::runtime_info;
 
 fn assert_send_sync<T>()
@@ -218,6 +220,97 @@ fn builder_default_matches_empty_options() {
     let _ = ClientBuilder::default()
         .build()
         .expect("default builder must succeed");
+}
+
+#[test]
+fn player_client_retry_order_starts_with_default() {
+    assert_eq!(PlayerClient::RETRY_ORDER.len(), 5);
+    assert_eq!(PlayerClient::RETRY_ORDER[0], PlayerClient::Default);
+    assert_eq!(
+        PlayerClient::RETRY_ORDER,
+        [
+            PlayerClient::Default,
+            PlayerClient::Android,
+            PlayerClient::TvEmbedded,
+            PlayerClient::Ios,
+            PlayerClient::Web,
+        ]
+    );
+}
+
+#[test]
+fn player_client_wire_names_match_upstream() {
+    assert_eq!(PlayerClient::Default.as_str(), "default");
+    assert_eq!(PlayerClient::Android.as_str(), "android");
+    assert_eq!(PlayerClient::TvEmbedded.as_str(), "web_embedded");
+    assert_eq!(PlayerClient::Ios.as_str(), "ios");
+    assert_eq!(PlayerClient::Web.as_str(), "web");
+}
+
+#[test]
+fn player_client_options_serialize_per_entry() {
+    assert_eq!(player_client_options([PlayerClient::Default]), ["{}"]);
+
+    let options = player_client_options([PlayerClient::Ios]);
+
+    assert_eq!(options.len(), 1);
+    assert!(
+        options[0].contains("\"ios\""),
+        "options were: {}",
+        options[0]
+    );
+
+    let parsed: serde_json::Value =
+        serde_json::from_str(&options[0]).expect("options must be JSON");
+
+    assert_eq!(
+        parsed,
+        serde_json::json!({
+            "extractor_args": {
+                "youtube": {
+                    "player_client": ["ios"],
+                },
+            },
+        })
+    );
+
+    let ordered = player_client_options(PlayerClient::RETRY_ORDER);
+
+    assert_eq!(ordered.len(), 5);
+    assert_eq!(ordered[0], "{}");
+    assert!(
+        ordered[3].contains("\"ios\""),
+        "options were: {}",
+        ordered[3]
+    );
+}
+
+#[test]
+fn youtube_player_client_reaches_youtube_dl() {
+    let server = FixtureServer::start(65536, 8_000_000);
+    let url = server.url("/file.bin");
+
+    let client = Client::builder()
+        .youtube_player_client(PlayerClient::Ios)
+        .build()
+        .expect("builder must succeed");
+
+    let info = client
+        .extract(&url)
+        .expect("ios override in context must keep generic extract working");
+
+    assert_eq!(info.id(), Some("file"));
+
+    let plain = Client::new("{}").expect("default options must be accepted");
+    let per_call = player_client_options([PlayerClient::Ios]);
+
+    assert_eq!(per_call.len(), 1);
+
+    let info = plain
+        .extract_with_options(&url, &per_call[0])
+        .expect("ios override per call must keep generic extract working");
+
+    assert_eq!(info.id(), Some("file"));
 }
 
 #[test]
