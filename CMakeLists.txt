@@ -174,6 +174,31 @@ install(EXPORT libytdlp-targets
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/libytdlp
 )
 
+include(CMakePackageConfigHelpers)
+
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/generated/libytdlp-config.cmake" [=[
+include(CMakeFindDependencyMacro)
+
+find_dependency(Threads)
+
+find_dependency(Python COMPONENTS Interpreter Development.Embed)
+
+include("${CMAKE_CURRENT_LIST_DIR}/libytdlp-targets.cmake")
+]=])
+
+write_basic_package_version_file(
+    "${CMAKE_CURRENT_BINARY_DIR}/generated/libytdlp-config-version.cmake"
+    VERSION ${PROJECT_VERSION}
+    COMPATIBILITY SameMajorVersion
+)
+
+install(
+    FILES
+        "${CMAKE_CURRENT_BINARY_DIR}/generated/libytdlp-config.cmake"
+        "${CMAKE_CURRENT_BINARY_DIR}/generated/libytdlp-config-version.cmake"
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/libytdlp
+)
+
 if(BUILD_TESTING)
     find_program(UV_EXECUTABLE NAMES uv REQUIRED)
 

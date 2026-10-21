@@ -79,6 +79,14 @@ if(NOT EXISTS "${staged_libdir}/cmake/libytdlp/libytdlp-targets.cmake")
   message(FATAL_ERROR "staged CMake export not found under ${staged_libdir}")
 endif()
 
+if(NOT EXISTS "${staged_libdir}/cmake/libytdlp/libytdlp-config.cmake")
+  message(FATAL_ERROR "staged CMake package config not found under ${staged_libdir}")
+endif()
+
+if(NOT EXISTS "${staged_libdir}/cmake/libytdlp/libytdlp-config-version.cmake")
+  message(FATAL_ERROR "staged CMake package version not found under ${staged_libdir}")
+endif()
+
 execute_process(
   COMMAND "${LIBYTDLP_C_COMPILER}"
     "${LIBYTDLP_SOURCE_DIR}/tests/native/smoke.c"
@@ -132,3 +140,90 @@ if(NOT run_bare_result EQUAL 0)
 endif()
 
 message(STATUS "staged smoke output without env:\n${run_bare_output}")
+
+set(consumer_src "${LIBYTDLP_WORK_DIR}/consumer")
+set(consumer_build "${LIBYTDLP_WORK_DIR}/consumer-build")
+
+file(REMOVE_RECURSE "${consumer_src}")
+file(REMOVE_RECURSE "${consumer_build}")
+file(MAKE_DIRECTORY "${consumer_src}")
+
+file(WRITE "${consumer_src}/CMakeLists.txt" [=[
+cmake_minimum_required(VERSION 3.22)
+project(ly_consumer C)
+find_package(libytdlp REQUIRED)
+add_executable(consumer main.c)
+target_link_libraries(consumer PRIVATE libytdlp::ytdlp)
+]=])
+
+file(WRITE "${consumer_src}/main.c" [=[
+#include <stdio.h>
+#include <libytdlp/libytdlp.h>
+
+int main(void) {
+    unsigned version = (unsigned)ly_abi_version();
+
+    printf("%u\n", version);
+
+    return 0;
+}
+]=])
+
+execute_process(
+  COMMAND "${CMAKE_COMMAND}" -S "${consumer_src}" -B "${consumer_build}"
+    "-DCMAKE_PREFIX_PATH=${LIBYTDLP_INSTALL_PREFIX}"
+    "-DCMAKE_C_COMPILER=${LIBYTDLP_C_COMPILER}"
+    "-DPython_EXECUTABLE=${LIBYTDLP_TEST_PYTHON}"
+  RESULT_VARIABLE consumer_configure_result
+  OUTPUT_VARIABLE consumer_configure_output
+  ERROR_VARIABLE consumer_configure_output
+)
+
+if(NOT consumer_configure_result EQUAL 0)
+  message(FATAL_ERROR "consumer configure failed:\n${consumer_configure_output}")
+endif()
+
+set(consumer_build_args --build "${consumer_build}")
+
+if(LIBYTDLP_BUILD_CONFIG)
+  list(APPEND consumer_build_args --config "${LIBYTDLP_BUILD_CONFIG}")
+endif()
+
+execute_process(
+  COMMAND "${CMAKE_COMMAND}" ${consumer_build_args}
+  RESULT_VARIABLE consumer_build_result
+  OUTPUT_VARIABLE consumer_build_output
+  ERROR_VARIABLE consumer_build_output
+)
+
+if(NOT consumer_build_result EQUAL 0)
+  message(FATAL_ERROR "consumer build failed:\n${consumer_build_output}")
+endif()
+
+file(GLOB_RECURSE consumer_candidates "${consumer_build}/consumer${CMAKE_EXECUTABLE_SUFFIX}")
+
+list(LENGTH consumer_candidates consumer_candidate_count)
+
+if(NOT consumer_candidate_count GREATER 0)
+  message(FATAL_ERROR "consumer binary not found under ${consumer_build}")
+endif()
+
+list(GET consumer_candidates 0 consumer_binary)
+
+execute_process(
+  COMMAND "${consumer_binary}"
+  RESULT_VARIABLE consumer_run_result
+  OUTPUT_VARIABLE consumer_run_output
+  ERROR_VARIABLE consumer_run_output
+  OUTPUT_STRIP_TRAILING_WHITESPACE
+)
+
+if(NOT consumer_run_result EQUAL 0)
+  message(FATAL_ERROR "consumer run failed:\n${consumer_run_output}")
+endif()
+
+if(NOT consumer_run_output MATCHES "^[0-9]+$")
+  message(FATAL_ERROR "consumer printed unexpected abi: ${consumer_run_output}")
+endif()
+
+message(STATUS "consumer find_package check ok: abi ${consumer_run_output}")
