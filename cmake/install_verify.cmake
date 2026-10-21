@@ -22,6 +22,14 @@ if(NOT DEFINED LIBYTDLP_WORK_DIR)
   message(FATAL_ERROR "LIBYTDLP_WORK_DIR is not set")
 endif()
 
+if(NOT DEFINED LIBYTDLP_PYTHON_INCLUDES)
+  message(FATAL_ERROR "LIBYTDLP_PYTHON_INCLUDES is not set")
+endif()
+
+if(NOT DEFINED LIBYTDLP_PYTHON_LIB)
+  message(FATAL_ERROR "LIBYTDLP_PYTHON_LIB is not set")
+endif()
+
 if(IS_ABSOLUTE "${LIBYTDLP_INSTALL_LIBDIR}")
   set(staged_libdir "${LIBYTDLP_INSTALL_LIBDIR}")
 else()
@@ -75,8 +83,10 @@ execute_process(
   COMMAND "${LIBYTDLP_C_COMPILER}"
     "${LIBYTDLP_SOURCE_DIR}/tests/native/smoke.c"
     "-I${staged_include}"
+    ${LIBYTDLP_PYTHON_INCLUDES}
     "-L${staged_libdir}"
     "-lytdlp"
+    ${LIBYTDLP_PYTHON_LIB}
     "-Wl,-rpath,${staged_libdir}"
     "-DLIBYTDLP_TEST_PYTHON=\"${LIBYTDLP_TEST_PYTHON}\""
     "-DLIBYTDLP_SLOW_SERVER=\"${LIBYTDLP_SLOW_SERVER}\""

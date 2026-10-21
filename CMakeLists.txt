@@ -182,8 +182,19 @@ if(BUILD_TESTING)
         ${CMAKE_CURRENT_SOURCE_DIR}/include
         ${CMAKE_CURRENT_BINARY_DIR}/generated/include
     )
-    target_link_libraries(ly_smoke PRIVATE ytdlp Threads::Threads)
+    target_link_libraries(ly_smoke PRIVATE ytdlp Threads::Threads Python::Python)
     target_compile_definitions(ly_smoke PRIVATE
+        LIBYTDLP_TEST_PYTHON="${Python_EXECUTABLE}"
+        LIBYTDLP_SLOW_SERVER="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/slow_server.py"
+    )
+
+    add_executable(ly_jobs tests/native/jobs.c)
+    target_include_directories(ly_jobs PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${CMAKE_CURRENT_BINARY_DIR}/generated/include
+    )
+    target_link_libraries(ly_jobs PRIVATE ytdlp Threads::Threads Python::Python)
+    target_compile_definitions(ly_jobs PRIVATE
         LIBYTDLP_TEST_PYTHON="${Python_EXECUTABLE}"
         LIBYTDLP_SLOW_SERVER="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/slow_server.py"
     )
@@ -204,10 +215,18 @@ if(BUILD_TESTING)
         target_compile_options(ly_smoke PRIVATE -fsanitize=${LIBYTDLP_SANITIZER_FLAGS}
                                                 -fno-omit-frame-pointer)
         target_link_options(ly_smoke PRIVATE -fsanitize=${LIBYTDLP_SANITIZER_FLAGS})
+        target_compile_options(ly_jobs PRIVATE -fsanitize=${LIBYTDLP_SANITIZER_FLAGS}
+                                               -fno-omit-frame-pointer)
+        target_link_options(ly_jobs PRIVATE -fsanitize=${LIBYTDLP_SANITIZER_FLAGS})
     endif()
 
     add_test(NAME smoke COMMAND ly_smoke)
     set_tests_properties(smoke PROPERTIES ENVIRONMENT
+        "LIBYTDLP_BRIDGE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/python;LIBYTDLP_YTDLP_DIR=${CMAKE_CURRENT_SOURCE_DIR}/third_party/yt-dlp"
+    )
+
+    add_test(NAME jobs COMMAND ly_jobs)
+    set_tests_properties(jobs PROPERTIES ENVIRONMENT
         "LIBYTDLP_BRIDGE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/python;LIBYTDLP_YTDLP_DIR=${CMAKE_CURRENT_SOURCE_DIR}/third_party/yt-dlp"
     )
 
@@ -218,6 +237,11 @@ if(BUILD_TESTING)
 
     set(LIBYTDLP_INSTALL_VERIFY_PREFIX ${CMAKE_CURRENT_BINARY_DIR}/install-verify/prefix)
     set(LIBYTDLP_INSTALL_VERIFY_WORK ${CMAKE_CURRENT_BINARY_DIR}/install-verify/work)
+
+    set(LIBYTDLP_TEST_PYTHON_INCLUDES "")
+    foreach(dir IN LISTS Python_INCLUDE_DIRS)
+        list(APPEND LIBYTDLP_TEST_PYTHON_INCLUDES "-I${dir}")
+    endforeach()
 
     add_test(NAME install-tree
         COMMAND ${CMAKE_COMMAND}
@@ -230,6 +254,8 @@ if(BUILD_TESTING)
             -DLIBYTDLP_SLOW_SERVER=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/slow_server.py
             -DLIBYTDLP_BRIDGE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/python
             -DLIBYTDLP_YTDLP_DIR=${CMAKE_CURRENT_SOURCE_DIR}/third_party/yt-dlp
+            "-DLIBYTDLP_PYTHON_INCLUDES=${LIBYTDLP_TEST_PYTHON_INCLUDES}"
+            "-DLIBYTDLP_PYTHON_LIB=${Python_LIBRARIES}"
             -DLIBYTDLP_WORK_DIR=${LIBYTDLP_INSTALL_VERIFY_WORK}
             -DLIBYTDLP_BUILD_CONFIG=$<CONFIG>
             -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/install_verify.cmake
