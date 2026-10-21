@@ -93,6 +93,9 @@ PY
     bump-version)
         exec "$repo_root/tools/bump-version" "$@"
         ;;
+    sbom)
+        exec python3 "$repo_root/tools/sbom.py" "$@"
+        ;;
     ide)
         configure "$@"
         echo "Compile database: $build_dir/compile_commands.json"
@@ -103,6 +106,7 @@ PY
     *)
         cat << USAGE
 usage: ./dev setup|configure|build|test|cover|run [target] [args...]|pysync|py [args...]|format|format-check|lint|ide|lines|bump-version
+       ./dev sbom [--check] [--out FILE]
 
 Set BUILD_DIR to use a different CMake build directory.
 USAGE
