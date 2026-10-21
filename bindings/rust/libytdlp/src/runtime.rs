@@ -58,6 +58,14 @@ impl RuntimeInfo {
             .unwrap_or(false)
     }
 
+    pub fn ffmpeg(&self) -> Option<&str> {
+        self.value.get("ffmpeg")?.as_str()
+    }
+
+    pub fn ffprobe(&self) -> Option<&str> {
+        self.value.get("ffprobe")?.as_str()
+    }
+
     fn text(&self, key: &str) -> &str {
         self.value
             .get(key)

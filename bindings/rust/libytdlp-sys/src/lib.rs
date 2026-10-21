@@ -39,6 +39,8 @@ unsafe extern "C" {
         context: *mut LyContext,
         url: *const c_char,
         url_len: usize,
+        options_json: *const c_char,
+        options_len: usize,
         out: *mut *mut LyResult,
         error: *mut *mut LyError,
     ) -> c_uint;

@@ -3,6 +3,7 @@ import json
 import yt_dlp
 from yt_dlp import YoutubeDL
 
+from .options import merge_options
 from .serialize import dumps
 
 
@@ -19,26 +20,6 @@ class _SilentLogger:
 
     def error(self, message):
         pass
-
-
-def _load_options(text):
-    if not text:
-        return {}
-
-    parsed = json.loads(text)
-
-    if not isinstance(parsed, dict):
-        raise ValueError("options must be a JSON object")
-
-    return parsed
-
-
-def _merge_options(context_options, job_options):
-    merged = _load_options(context_options)
-    overrides = _load_options(job_options)
-    merged.update(overrides)
-
-    return merged
 
 
 def _params(options, events, cancel_event):
@@ -81,7 +62,7 @@ def download_json(
     if cancel_event is None:
         raise ValueError("cancel_event must be a threading.Event")
 
-    options = _merge_options(context_options_json, job_options_json)
+    options = merge_options(context_options_json, job_options_json)
 
     with YoutubeDL(_params(options, events, cancel_event)) as ydl:
         info = ydl.extract_info(url, download=True)

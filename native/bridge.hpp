@@ -17,7 +17,11 @@ struct BridgeResult {
     std::string exception_class;
 };
 
-BridgeResult extract_json(const std::string& url, const std::string& options);
+BridgeResult extract_json(
+    const std::string& url,
+    const std::string& context_options,
+    const std::string& call_options = "{}"
+);
 BridgeResult download_json(
     const std::string& url,
     const std::string& context_options,

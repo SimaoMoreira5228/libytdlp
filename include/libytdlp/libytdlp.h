@@ -61,6 +61,8 @@ LY_API ly_status ly_extract(
     ly_context* context,
     const char* url,
     size_t url_len,
+    const char* options_json,
+    size_t options_len,
     ly_result** out,
     ly_error** error
 ) LY_NOEXCEPT;

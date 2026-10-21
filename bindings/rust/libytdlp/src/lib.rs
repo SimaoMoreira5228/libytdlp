@@ -11,9 +11,11 @@ mod progress;
 mod runtime;
 
 pub use client::Client;
+pub use client::ClientBuilder;
 pub use error::{Error, Kind};
 pub use job::{DownloadJob, JobState, WaitForDownload};
 pub use media::Format;
+pub use media::MediaEntry;
 pub use media::MediaInfo;
 pub use progress::ProgressEvent;
 pub use runtime::{RuntimeInfo, abi_version, runtime_info};

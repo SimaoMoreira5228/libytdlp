@@ -113,17 +113,17 @@ def check_extractor_args_passthrough():
 
 
 def check_merge_options():
-    from libytdlp_bridge.download import _merge_options
+    from libytdlp_bridge.options import merge_options
 
-    assert _merge_options("{}", "{}") == {}
-    assert _merge_options("", "") == {}
-    assert _merge_options("", "{}") == {}
-    assert _merge_options("{}", "") == {}
+    assert merge_options("{}", "{}") == {}
+    assert merge_options("", "") == {}
+    assert merge_options("", "{}") == {}
+    assert merge_options("{}", "") == {}
 
-    merged = _merge_options('{"a": 1, "b": 2}', '{"b": 3, "c": 4}')
+    merged = merge_options('{"a": 1, "b": 2}', '{"b": 3, "c": 4}')
     assert merged == {"a": 1, "b": 3, "c": 4}, merged
 
-    assert _merge_options('{"a": 1}', "") == {"a": 1}
+    assert merge_options('{"a": 1}', "") == {"a": 1}
 
     for context_options, job_options in [
         ("[1, 2]", "{}"),
@@ -133,7 +133,7 @@ def check_merge_options():
         ('"x"', "{}"),
     ]:
         try:
-            _merge_options(context_options, job_options)
+            merge_options(context_options, job_options)
         except ValueError:
             pass
         else:
@@ -249,6 +249,42 @@ def check_cli_library_parity():
         stop_fixture_server(server)
 
 
+def check_find_executables():
+    import shutil
+    import tempfile
+
+    from libytdlp_bridge.extract import find_executable, find_executables
+
+    found = find_executable("python3", None)
+    assert found, "python3 must resolve on PATH"
+    assert os.path.isabs(found)
+    assert os.access(found, os.X_OK)
+
+    scratch = tempfile.mkdtemp()
+    try:
+        assert find_executable("python3", [scratch]) is None
+
+        located = find_executables([scratch])
+        assert located["ffmpeg"] is None
+        assert located["ffprobe"] is None
+
+        python_path = shutil.which("python3")
+        assert python_path, "python3 must resolve on PATH"
+        python_dir = os.path.dirname(python_path)
+        assert find_executable("python3", [python_dir]) == python_path
+    finally:
+        os.rmdir(scratch)
+
+    from libytdlp_bridge import runtime_info
+
+    info = json.loads(runtime_info("FULL_BUNDLED", "abc123", 1, False))
+    assert "ffmpeg" in info
+    assert "ffprobe" in info
+    assert info["ffmpeg"] is None or isinstance(info["ffmpeg"], str)
+    assert info["ffprobe"] is None or isinstance(info["ffprobe"], str)
+    print("find executables ok")
+
+
 if __name__ == "__main__":
     check_versions()
     check_dumps_round_trip()
@@ -261,4 +297,5 @@ if __name__ == "__main__":
     check_cli_library_parity()
     check_runtime_info()
     check_unsupported_url()
+    check_find_executables()
     print("bridge ok")

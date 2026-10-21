@@ -1,8 +1,11 @@
 import json
+import os
+import shutil
 
 import yt_dlp
 from yt_dlp import YoutubeDL
 
+from .options import merge_options
 from .serialize import dumps
 
 BRIDGE_VERSION = "0.1.0"
@@ -36,16 +39,39 @@ def _params(options):
     return params
 
 
-def extract_json(url, options_json="{}"):
+def extract_json(url, context_options_json="{}", call_options_json="{}"):
     if not url or not isinstance(url, str):
         raise ValueError("url must be a non-empty string")
 
-    options = json.loads(options_json) if options_json else {}
+    options = merge_options(context_options_json, call_options_json)
 
     with YoutubeDL(_params(options)) as ydl:
         info = ydl.extract_info(url, download=False)
 
     return dumps(info)
+
+
+def find_executable(name, search_dirs=None):
+    if not name or not isinstance(name, str):
+        raise ValueError("name must be a non-empty string")
+
+    if search_dirs is None:
+        return shutil.which(name)
+
+    for directory in search_dirs:
+        candidate = os.path.join(directory, name)
+
+        if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+            return candidate
+
+    return None
+
+
+def find_executables(search_dirs=None):
+    return {
+        "ffmpeg": find_executable("ffmpeg", search_dirs),
+        "ffprobe": find_executable("ffprobe", search_dirs),
+    }
 
 
 def versions():
@@ -74,4 +100,7 @@ def runtime_info(profile, ytdlp_commit, abi, host_owned):
     versions_info["ytdlp_commit"] = ytdlp_commit
     versions_info["abi"] = int(abi)
     versions_info["host_owned"] = bool(host_owned)
+    located = find_executables()
+    versions_info["ffmpeg"] = located["ffmpeg"]
+    versions_info["ffprobe"] = located["ffprobe"]
     return json.dumps(versions_info, ensure_ascii=True, separators=(",", ":"))

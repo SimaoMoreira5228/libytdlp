@@ -266,6 +266,8 @@ ly_status ly_extract(
     ly_context* context,
     const char* url,
     size_t url_len,
+    const char* options_json,
+    size_t options_len,
     ly_result** out,
     ly_error** error
 ) noexcept {
@@ -290,14 +292,26 @@ ly_status ly_extract(
             return LY_E_INVALID_ARGUMENT;
         }
 
+        if (options_json == nullptr && options_len != 0) {
+            store_error(error, make_error(LY_E_INVALID_ARGUMENT, "options length needs a buffer"));
+            return LY_E_INVALID_ARGUMENT;
+        }
+
         if (!ensure_runtime(error)) {
             return LY_E_RUNTIME;
         }
 
         std::string url_text(url, url_len);
-        const std::string& options = reinterpret_cast<LyContext*>(context)->options;
+        const std::string& context_options = reinterpret_cast<LyContext*>(context)->options;
 
-        libytdlp::BridgeResult called = libytdlp::extract_json(url_text, options);
+        std::string call_options = "{}";
+
+        if (options_json != nullptr && options_len != 0) {
+            call_options.assign(options_json, options_len);
+        }
+
+        libytdlp::BridgeResult called =
+            libytdlp::extract_json(url_text, context_options, call_options);
         if (!called.ok) {
             store_error(error, make_error(called.status, called.message, called.exception_class));
             return called.status;

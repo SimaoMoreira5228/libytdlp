@@ -191,11 +191,16 @@ void capture_failure(BridgeResult& out) {
     }
 }
 
-BridgeResult call_bridge(const std::string& url, const std::string& options) {
+BridgeResult call_bridge(
+    const std::string& url,
+    const std::string& context_options,
+    const std::string& call_options
+) {
     BridgeResult out;
 
     if (url.size() > static_cast<size_t>(PY_SSIZE_T_MAX) ||
-        options.size() > static_cast<size_t>(PY_SSIZE_T_MAX)) {
+        context_options.size() > static_cast<size_t>(PY_SSIZE_T_MAX) ||
+        call_options.size() > static_cast<size_t>(PY_SSIZE_T_MAX)) {
         out.status = LY_E_INVALID_ARGUMENT;
         out.message = "input too large";
         return out;
@@ -218,18 +223,27 @@ BridgeResult call_bridge(const std::string& url, const std::string& options) {
     OwnedPyRef url_obj(
         PyUnicode_FromStringAndSize(url.data(), static_cast<Py_ssize_t>(url.size()))
     );
-    OwnedPyRef options_obj(
-        PyUnicode_FromStringAndSize(options.data(), static_cast<Py_ssize_t>(options.size()))
-    );
-    if (!url_obj || !options_obj) {
+    OwnedPyRef context_obj(PyUnicode_FromStringAndSize(
+        context_options.data(),
+        static_cast<Py_ssize_t>(context_options.size())
+    ));
+    OwnedPyRef call_obj(PyUnicode_FromStringAndSize(
+        call_options.data(),
+        static_cast<Py_ssize_t>(call_options.size())
+    ));
+    if (!url_obj || !context_obj || !call_obj) {
         PyErr_Clear();
         out.message = "could not encode call arguments";
         return out;
     }
 
-    OwnedPyRef result(
-        PyObject_CallFunctionObjArgs(function.get(), url_obj.get(), options_obj.get(), nullptr)
-    );
+    OwnedPyRef result(PyObject_CallFunctionObjArgs(
+        function.get(),
+        url_obj.get(),
+        context_obj.get(),
+        call_obj.get(),
+        nullptr
+    ));
     if (!result) {
         capture_failure(out);
         return out;
@@ -418,11 +432,15 @@ BridgeResult runtime_info_json(
 
 } // namespace
 
-BridgeResult extract_json(const std::string& url, const std::string& options) {
+BridgeResult extract_json(
+    const std::string& url,
+    const std::string& context_options,
+    const std::string& call_options
+) {
     std::lock_guard<std::mutex> lock(Runtime::instance().serial());
     GilGuard guard;
 
-    return call_bridge(url, options);
+    return call_bridge(url, context_options, call_options);
 }
 
 BridgeResult download_json(
