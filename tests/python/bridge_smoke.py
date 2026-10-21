@@ -1,5 +1,6 @@
 import json
 import os
+import subprocess
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "python"))
@@ -143,6 +144,111 @@ def check_merge_options():
     print("merge options ok")
 
 
+def fixture_script():
+    here = os.path.dirname(os.path.abspath(__file__))
+
+    return os.path.normpath(os.path.join(here, "..", "fixtures", "slow_server.py"))
+
+
+def start_fixture_server(payload_bytes, rate_bytes_per_sec):
+    process = subprocess.Popen(
+        [sys.executable, fixture_script(), "0", str(payload_bytes), str(rate_bytes_per_sec)],
+        stdout=subprocess.PIPE,
+        text=True,
+    )
+
+    line = process.stdout.readline()
+
+    if not line.startswith("PORT "):
+        stop_fixture_server(process)
+
+        raise AssertionError(f"fixture server did not report a port: {line!r}")
+
+    port = int(line.removeprefix("PORT ").strip())
+
+    return process, port
+
+
+def stop_fixture_server(process):
+    if process.poll() is None:
+        process.terminate()
+
+    try:
+        process.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait(timeout=10)
+
+    if process.stdout is not None:
+        process.stdout.close()
+
+
+def run_cli_info(url):
+    return subprocess.run(
+        [sys.executable, "-m", "yt_dlp", "--no-cache-dir", "-J", url],
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+
+
+def format_urls(info):
+    urls = set()
+
+    direct = info.get("url")
+
+    if direct:
+        urls.add(direct)
+
+    for entry in info.get("formats") or []:
+        candidate = entry.get("url")
+
+        if candidate:
+            urls.add(candidate)
+
+    return urls
+
+
+def check_cli_library_parity():
+    server, port = start_fixture_server(65536, 8000000)
+
+    try:
+        url = f"http://127.0.0.1:{port}/file.bin"
+
+        completed = run_cli_info(url)
+
+        assert completed.returncode == 0, completed.stderr[-2000:]
+
+        cli_info = json.loads(completed.stdout)
+
+        lib_info = json.loads(extract_json(url, "{}"))
+
+        assert cli_info["id"] == lib_info["id"], (cli_info.get("id"), lib_info.get("id"))
+
+        assert cli_info["id"] == "file", cli_info.get("id")
+
+        assert cli_info["ext"] == lib_info["ext"], (cli_info.get("ext"), lib_info.get("ext"))
+
+        assert format_urls(cli_info) == format_urls(lib_info)
+
+        assert format_urls(lib_info) == {url}, format_urls(lib_info)
+
+        bogus_cli = run_cli_info("ly-bogus://no-such-scheme-xyz")
+
+        assert bogus_cli.returncode != 0
+
+        try:
+            extract_json("ly-bogus://no-such-scheme-xyz", "{}")
+        except Exception as caught:
+            assert str(caught), "exception without a message"
+        else:
+            raise AssertionError("bogus url was accepted by the library")
+
+        print("cli/library parity ok")
+    finally:
+        stop_fixture_server(server)
+
+
 if __name__ == "__main__":
     check_versions()
     check_dumps_round_trip()
@@ -152,6 +258,7 @@ if __name__ == "__main__":
     check_extractor_inventory()
     check_extractor_args_passthrough()
     check_merge_options()
+    check_cli_library_parity()
     check_runtime_info()
     check_unsupported_url()
     print("bridge ok")
