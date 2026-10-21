@@ -465,6 +465,129 @@ static void check_job_per_download_override(void) {
     stop_fixture(child);
 }
 
+static void check_job_download_restricted(void) {
+    int port = 0;
+    pid_t child = spawn_fixture("65536", "8000000", &port);
+
+    char dir[256];
+    make_tmpdir(dir, sizeof(dir));
+
+    char target[300];
+    snprintf(target, sizeof(target), "%s/ok.bin", dir);
+
+    char context_options[512];
+    snprintf(context_options, sizeof(context_options), "{\"outtmpl\": \"%s\"}", target);
+
+    char job_options[512];
+    snprintf(job_options, sizeof(job_options), "{\"libytdlp\": {\"restrict_to\": \"%s\"}}", dir);
+
+    ly_context* context = NULL;
+    assert(ly_context_create(context_options, strlen(context_options), &context, NULL) == LY_OK);
+
+    char url[128];
+    snprintf(url, sizeof(url), "http://127.0.0.1:%d/file.bin", port);
+
+    ly_job* job = NULL;
+    ly_error* error = NULL;
+    assert(
+        ly_download_start(
+            context,
+            url,
+            strlen(url),
+            job_options,
+            strlen(job_options),
+            &job,
+            &error
+        ) == LY_OK
+    );
+    assert(job != NULL);
+
+    ly_result* out = NULL;
+    assert(ly_job_wait(job, &out, &error) == LY_OK);
+    assert(out != NULL);
+    ly_result_release(out);
+
+    FILE* probe = fopen(target, "rb");
+    assert(probe != NULL);
+    assert(fseek(probe, 0, SEEK_END) == 0);
+    assert(ftell(probe) == 65536);
+    assert(fclose(probe) == 0);
+
+    ly_job_release(job);
+    assert(ly_context_release(context) == LY_OK);
+
+    remove_tree(dir);
+
+    stop_fixture(child);
+}
+
+static void check_job_download_restricted_reject(void) {
+    int port = 0;
+    pid_t child = spawn_fixture("65536", "8000000", &port);
+
+    char dir_a[256];
+    make_tmpdir(dir_a, sizeof(dir_a));
+
+    char dir_b[256];
+    make_tmpdir(dir_b, sizeof(dir_b));
+
+    char target[300];
+    snprintf(target, sizeof(target), "%s/ok.bin", dir_a);
+
+    char context_options[512];
+    snprintf(context_options, sizeof(context_options), "{\"outtmpl\": \"%s\"}", target);
+
+    char job_options[512];
+    snprintf(job_options, sizeof(job_options), "{\"libytdlp\": {\"restrict_to\": \"%s\"}}", dir_b);
+
+    ly_context* context = NULL;
+    assert(ly_context_create(context_options, strlen(context_options), &context, NULL) == LY_OK);
+
+    char url[128];
+    snprintf(url, sizeof(url), "http://127.0.0.1:%d/file.bin", port);
+
+    ly_job* job = NULL;
+    ly_error* error = NULL;
+    assert(
+        ly_download_start(
+            context,
+            url,
+            strlen(url),
+            job_options,
+            strlen(job_options),
+            &job,
+            &error
+        ) == LY_OK
+    );
+    assert(job != NULL);
+
+    ly_result* out = NULL;
+    ly_status status = ly_job_wait(job, &out, &error);
+    assert(status == LY_E_INVALID_ARGUMENT);
+    assert(out == NULL);
+    assert(error != NULL);
+    assert(ly_error_code(error) == LY_E_INVALID_ARGUMENT);
+
+    const char* details = NULL;
+    size_t details_len = 0;
+    assert(ly_error_details_json(error, &details, &details_len) == LY_OK);
+    assert(details != NULL);
+    assert(details_len > 0);
+    assert(strstr(details, "\"kind\":\"invalid_argument\"") != NULL);
+    ly_error_release(error);
+
+    assert(access(target, F_OK) != 0);
+    assert(dir_is_empty(dir_b));
+
+    ly_job_release(job);
+    assert(ly_context_release(context) == LY_OK);
+
+    remove_tree(dir_a);
+    remove_tree(dir_b);
+
+    stop_fixture(child);
+}
+
 static char* save_env(const char* name) {
     const char* value = getenv(name);
     if (value == NULL) {
@@ -607,6 +730,12 @@ int main(void) {
 
     check_job_per_download_override();
     printf("job per-download override ok\n");
+
+    check_job_download_restricted();
+    printf("job download restricted ok\n");
+
+    check_job_download_restricted_reject();
+    printf("job download restricted reject ok\n");
 
     check_job_closed_port_network();
     printf("job closed port network ok\n");

@@ -144,6 +144,109 @@ def check_merge_options():
     print("merge options ok")
 
 
+def check_download_sandbox():
+    import tempfile
+
+    from libytdlp_bridge.download import _params as download_params
+    from yt_dlp import YoutubeDL
+
+    root = tempfile.mkdtemp()
+    outside = tempfile.mkdtemp()
+
+    try:
+        params = download_params({"outtmpl": os.path.join(outside, "%(id)s.%(ext)s")}, [], None)
+
+        assert params["outtmpl"].startswith(outside)
+        assert "libytdlp" not in params
+
+        with YoutubeDL(params):
+            pass
+
+        try:
+            download_params(
+                {
+                    "libytdlp": {"restrict_to": "relative/dir"},
+                    "outtmpl": os.path.join(root, "%(id)s.%(ext)s"),
+                },
+                [],
+                None,
+            )
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("relative restrict_to was accepted")
+
+        try:
+            download_params(
+                {
+                    "libytdlp": {"restrict_to": root},
+                    "outtmpl": os.path.join(root, "..", "escape-%(id)s.%(ext)s"),
+                },
+                [],
+                None,
+            )
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("escaping outtmpl was accepted")
+
+        try:
+            download_params(
+                {
+                    "libytdlp": {"restrict_to": root},
+                    "outtmpl": os.path.join(outside, "out-%(id)s.%(ext)s"),
+                },
+                [],
+                None,
+            )
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("outside outtmpl was accepted")
+
+        try:
+            download_params(
+                {
+                    "libytdlp": {"restrict_to": root},
+                    "outtmpl": os.path.join(root, "%(id)s.%(ext)s"),
+                    "paths": {"home": outside},
+                },
+                [],
+                None,
+            )
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("outside paths home was accepted")
+
+        try:
+            download_params({"libytdlp": {"restrict_to": root}}, [], None)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("restriction without outtmpl or paths was accepted")
+
+        params = download_params(
+            {
+                "libytdlp": {"restrict_to": root},
+                "outtmpl": os.path.join(root, "%(id)s.%(ext)s"),
+            },
+            [],
+            None,
+        )
+
+        assert params["outtmpl"].startswith(root)
+        assert "libytdlp" not in params
+
+        with YoutubeDL(params):
+            pass
+
+        print("download sandbox ok")
+    finally:
+        os.rmdir(root)
+        os.rmdir(outside)
+
+
 def fixture_script():
     here = os.path.dirname(os.path.abspath(__file__))
 
@@ -294,6 +397,7 @@ if __name__ == "__main__":
     check_extractor_inventory()
     check_extractor_args_passthrough()
     check_merge_options()
+    check_download_sandbox()
     check_cli_library_parity()
     check_runtime_info()
     check_unsupported_url()
