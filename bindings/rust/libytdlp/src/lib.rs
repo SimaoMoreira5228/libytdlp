@@ -12,7 +12,7 @@ mod runtime;
 
 pub use client::Client;
 pub use error::{Error, Kind};
-pub use job::{DownloadJob, JobState};
+pub use job::{DownloadJob, JobState, WaitForDownload};
 pub use media::Format;
 pub use media::MediaInfo;
 pub use progress::ProgressEvent;

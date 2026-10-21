@@ -1,4 +1,11 @@
+use std::future::Future;
+use std::pin::Pin;
 use std::ptr;
+use std::sync::Arc;
+use std::sync::Mutex;
+use std::task::Context;
+use std::task::Poll;
+use std::task::Waker;
 
 use libytdlp_sys as sys;
 
@@ -73,6 +80,16 @@ impl DownloadJob {
         MediaInfo::from_raw(result)
     }
 
+    pub fn wait_async(self) -> WaitForDownload {
+        WaitForDownload {
+            job: Some(self),
+            shared: Arc::new(Shared {
+                waker: Mutex::new(None),
+                outcome: Mutex::new(None),
+            }),
+        }
+    }
+
     pub fn cancel(&self) {
         unsafe {
             sys::ly_job_cancel(self.raw);
@@ -91,3 +108,49 @@ impl Drop for DownloadJob {
 unsafe impl Send for DownloadJob {}
 
 unsafe impl Sync for DownloadJob {}
+
+struct Shared {
+    waker: Mutex<Option<Waker>>,
+    outcome: Mutex<Option<Result<MediaInfo, Error>>>,
+}
+
+pub struct WaitForDownload {
+    job: Option<DownloadJob>,
+    shared: Arc<Shared>,
+}
+
+impl Future for WaitForDownload {
+    type Output = Result<MediaInfo, Error>;
+
+    fn poll(mut self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Self::Output> {
+        if let Some(outcome) = self.shared.outcome.lock().expect("outcome lock").take() {
+            return Poll::Ready(outcome);
+        }
+
+        *self.shared.waker.lock().expect("waker lock") = Some(context.waker().clone());
+
+        if let Some(outcome) = self.shared.outcome.lock().expect("outcome lock").take() {
+            return Poll::Ready(outcome);
+        }
+
+        let Some(job) = self.job.take() else {
+            return Poll::Pending;
+        };
+
+        let shared = Arc::clone(&self.shared);
+
+        std::thread::spawn(move || {
+            let outcome = job.wait();
+
+            *shared.outcome.lock().expect("outcome lock") = Some(outcome);
+
+            let waker = shared.waker.lock().expect("waker lock").take();
+
+            if let Some(waker) = waker {
+                waker.wake();
+            }
+        });
+
+        Poll::Pending
+    }
+}
