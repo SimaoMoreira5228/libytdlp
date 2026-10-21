@@ -151,3 +151,32 @@ jobs:
         env:
           LIBYTDLP_LIB_DIR: ${{ github.workspace }}/build
         run: cargo check --locked --all-targets
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: ilammy/msvc-dev-cmd@v1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: astral-sh/setup-uv@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Sync Python env
+        run: uv sync --locked
+      - name: Configure
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+      - name: Build
+        run: cmake --build build --parallel
+      - name: Expose DLL to test processes
+        shell: pwsh
+        run: echo "${{ github.workspace }}\build" | Out-File -Append $env:GITHUB_PATH
+      - name: Test
+        run: ctest --test-dir build --output-on-failure --timeout 300
+      - name: Rust tests
+        working-directory: bindings/rust
+        env:
+          LIBYTDLP_LIB_DIR: ${{ github.workspace }}/build
+        run: cargo test --locked

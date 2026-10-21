@@ -234,13 +234,22 @@ fn dropping_future_mid_flight_is_safe() {
         ));
     }
 
-    std::thread::sleep(Duration::from_secs(2));
+    drop(server);
 
     let parent = target.parent().expect("output must have a parent");
 
-    let _ = std::fs::remove_dir_all(parent);
+    let deadline = std::time::Instant::now() + Duration::from_secs(30);
 
-    assert!(!parent.exists(), "temp dir must clean up after drop");
+    while parent.exists() {
+        let _ = std::fs::remove_dir_all(parent);
 
-    let _ = server;
+        if parent.exists() {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "temp dir must clean up after drop"
+            );
+
+            std::thread::sleep(Duration::from_millis(100));
+        }
+    }
 }

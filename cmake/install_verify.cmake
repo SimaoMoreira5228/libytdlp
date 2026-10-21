@@ -90,6 +90,7 @@ endif()
 execute_process(
   COMMAND "${LIBYTDLP_C_COMPILER}"
     "${LIBYTDLP_SOURCE_DIR}/tests/native/smoke.c"
+    "${LIBYTDLP_SOURCE_DIR}/tests/native/fixture.c"
     "-I${staged_include}"
     ${LIBYTDLP_PYTHON_INCLUDES}
     "-L${staged_libdir}"

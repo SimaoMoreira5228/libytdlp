@@ -105,12 +105,23 @@ foreach(target ytdlp ytdlp_static)
 endforeach()
 target_link_libraries(ytdlp PRIVATE Python::Python)
 target_link_libraries(ytdlp_static PUBLIC Python::Python)
-set_target_properties(ytdlp_static PROPERTIES
-    OUTPUT_NAME ytdlp
-    POSITION_INDEPENDENT_CODE ON
-    CXX_VISIBILITY_PRESET hidden
-    VISIBILITY_INLINES_HIDDEN ON
-)
+target_compile_definitions(ytdlp PRIVATE LY_BUILDING_SHARED)
+target_compile_definitions(ytdlp_static PUBLIC LY_STATIC)
+if(WIN32)
+    set_target_properties(ytdlp_static PROPERTIES
+        OUTPUT_NAME ytdlp_static
+        POSITION_INDEPENDENT_CODE ON
+        CXX_VISIBILITY_PRESET hidden
+        VISIBILITY_INLINES_HIDDEN ON
+    )
+else()
+    set_target_properties(ytdlp_static PROPERTIES
+        OUTPUT_NAME ytdlp
+        POSITION_INDEPENDENT_CODE ON
+        CXX_VISIBILITY_PRESET hidden
+        VISIBILITY_INLINES_HIDDEN ON
+    )
+endif()
 set_target_properties(ytdlp PROPERTIES
     OUTPUT_NAME ytdlp
     VERSION ${PROJECT_VERSION}
@@ -202,23 +213,31 @@ install(
 if(BUILD_TESTING)
     find_program(UV_EXECUTABLE NAMES uv REQUIRED)
 
-    add_executable(ly_smoke tests/native/smoke.c)
+    add_executable(ly_smoke tests/native/smoke.c tests/native/fixture.c)
     target_include_directories(ly_smoke PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include
         ${CMAKE_CURRENT_BINARY_DIR}/generated/include
     )
-    target_link_libraries(ly_smoke PRIVATE ytdlp Threads::Threads Python::Python)
+    target_link_libraries(ly_smoke PRIVATE ytdlp Python::Python)
+    if(NOT WIN32)
+        target_link_libraries(ly_smoke PRIVATE Threads::Threads)
+    endif()
     target_compile_definitions(ly_smoke PRIVATE
         LIBYTDLP_TEST_PYTHON="${Python_EXECUTABLE}"
         LIBYTDLP_SLOW_SERVER="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/slow_server.py"
     )
 
-    add_executable(ly_jobs tests/native/jobs.c)
+    add_executable(ly_jobs tests/native/jobs.c tests/native/fixture.c)
     target_include_directories(ly_jobs PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include
         ${CMAKE_CURRENT_BINARY_DIR}/generated/include
     )
-    target_link_libraries(ly_jobs PRIVATE ytdlp Threads::Threads Python::Python)
+    target_link_libraries(ly_jobs PRIVATE ytdlp Python::Python)
+    if(NOT WIN32)
+        target_link_libraries(ly_jobs PRIVATE Threads::Threads)
+    else()
+        target_link_libraries(ly_jobs PRIVATE ws2_32)
+    endif()
     target_compile_definitions(ly_jobs PRIVATE
         LIBYTDLP_TEST_PYTHON="${Python_EXECUTABLE}"
         LIBYTDLP_SLOW_SERVER="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/slow_server.py"
@@ -245,6 +264,16 @@ if(BUILD_TESTING)
         target_link_options(ly_jobs PRIVATE -fsanitize=${LIBYTDLP_SANITIZER_FLAGS})
     endif()
 
+    if(MSVC)
+        # NOTE: MSVC Release defines NDEBUG, which would silently disable assert()
+        # in the test executables. Undefine it for tests only; the library keeps it.
+        foreach(target ly_smoke ly_jobs)
+            target_compile_options(${target} PRIVATE
+                $<$<CONFIG:Release,RelWithDebInfo,MinSizeRel>:/UNDEBUG>
+            )
+        endforeach()
+    endif()
+
     add_test(NAME smoke COMMAND ly_smoke)
     set_tests_properties(smoke PROPERTIES ENVIRONMENT
         "LIBYTDLP_BRIDGE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/python;LIBYTDLP_YTDLP_DIR=${CMAKE_CURRENT_SOURCE_DIR}/third_party/yt-dlp"
@@ -254,6 +283,12 @@ if(BUILD_TESTING)
     set_tests_properties(jobs PROPERTIES ENVIRONMENT
         "LIBYTDLP_BRIDGE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/python;LIBYTDLP_YTDLP_DIR=${CMAKE_CURRENT_SOURCE_DIR}/third_party/yt-dlp"
     )
+
+    if(WIN32)
+        set_tests_properties(smoke jobs PROPERTIES ENVIRONMENT_MODIFICATION
+            "PATH=path_list_prepend:$<TARGET_FILE_DIR:ytdlp>"
+        )
+    endif()
 
     add_test(NAME bridge
         COMMAND ${UV_EXECUTABLE} run --project ${CMAKE_CURRENT_SOURCE_DIR} python tests/python/bridge_smoke.py
@@ -268,21 +303,23 @@ if(BUILD_TESTING)
         list(APPEND LIBYTDLP_TEST_PYTHON_INCLUDES "-I${dir}")
     endforeach()
 
-    add_test(NAME install-tree
-        COMMAND ${CMAKE_COMMAND}
-            -DLIBYTDLP_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}
-            -DLIBYTDLP_BUILD_DIR=${CMAKE_CURRENT_BINARY_DIR}
-            -DLIBYTDLP_INSTALL_PREFIX=${LIBYTDLP_INSTALL_VERIFY_PREFIX}
-            -DLIBYTDLP_INSTALL_LIBDIR=${CMAKE_INSTALL_LIBDIR}
-            -DLIBYTDLP_C_COMPILER=${CMAKE_C_COMPILER}
-            -DLIBYTDLP_TEST_PYTHON=${Python_EXECUTABLE}
-            -DLIBYTDLP_SLOW_SERVER=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/slow_server.py
-            -DLIBYTDLP_BRIDGE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/python
-            -DLIBYTDLP_YTDLP_DIR=${CMAKE_CURRENT_SOURCE_DIR}/third_party/yt-dlp
-            "-DLIBYTDLP_PYTHON_INCLUDES=${LIBYTDLP_TEST_PYTHON_INCLUDES}"
-            "-DLIBYTDLP_PYTHON_LIB=${Python_LIBRARIES}"
-            -DLIBYTDLP_WORK_DIR=${LIBYTDLP_INSTALL_VERIFY_WORK}
-            -DLIBYTDLP_BUILD_CONFIG=$<CONFIG>
-            -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/install_verify.cmake
-    )
+    if(NOT WIN32)
+        add_test(NAME install-tree
+            COMMAND ${CMAKE_COMMAND}
+                -DLIBYTDLP_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}
+                -DLIBYTDLP_BUILD_DIR=${CMAKE_CURRENT_BINARY_DIR}
+                -DLIBYTDLP_INSTALL_PREFIX=${LIBYTDLP_INSTALL_VERIFY_PREFIX}
+                -DLIBYTDLP_INSTALL_LIBDIR=${CMAKE_INSTALL_LIBDIR}
+                -DLIBYTDLP_C_COMPILER=${CMAKE_C_COMPILER}
+                -DLIBYTDLP_TEST_PYTHON=${Python_EXECUTABLE}
+                -DLIBYTDLP_SLOW_SERVER=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/slow_server.py
+                -DLIBYTDLP_BRIDGE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/python
+                -DLIBYTDLP_YTDLP_DIR=${CMAKE_CURRENT_SOURCE_DIR}/third_party/yt-dlp
+                "-DLIBYTDLP_PYTHON_INCLUDES=${LIBYTDLP_TEST_PYTHON_INCLUDES}"
+                "-DLIBYTDLP_PYTHON_LIB=${Python_LIBRARIES}"
+                -DLIBYTDLP_WORK_DIR=${LIBYTDLP_INSTALL_VERIFY_WORK}
+                -DLIBYTDLP_BUILD_CONFIG=$<CONFIG>
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/install_verify.cmake
+        )
+    endif()
 endif()

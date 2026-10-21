@@ -3,6 +3,13 @@
 #include <stdlib.h>
 #include <string.h>
 
+#ifdef _WIN32
+#include <io.h>
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#else
 #include <errno.h>
 #include <signal.h>
 #include <sys/types.h>
@@ -14,8 +21,21 @@
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
+#endif
 
 #include <libytdlp/libytdlp.h>
+
+#include "fixture.h"
+
+#ifdef _WIN32
+static void sleep_between_polls(void) {
+    Sleep(10);
+}
+#else
+static void sleep_between_polls(void) {
+    usleep(10000);
+}
+#endif
 
 static void check_job_null_handling(void) {
     ly_context* context = NULL;
@@ -51,66 +71,61 @@ static void check_job_null_handling(void) {
     assert(ly_context_release(context) == LY_OK);
 }
 
-static pid_t spawn_fixture(const char* bytes, const char* rate, int* port_out) {
-    int fds[2];
-    assert(pipe(fds) == 0);
+#ifdef _WIN32
+static void make_tmpdir(char* path, size_t len) {
+    assert(len > 32);
 
-    pid_t child = fork();
-    assert(child >= 0);
+    char base[MAX_PATH];
+    DWORD got = GetTempPathA(sizeof(base), base);
+    assert(got != 0);
+    assert(got < sizeof(base));
 
-    if (child == 0) {
-        while (dup2(fds[1], STDOUT_FILENO) < 0 && errno == EINTR) {
+    static int counter = 0;
+    counter++;
+
+    int written =
+        snprintf(path, len, "%sly_job_%lu_%d", base, (unsigned long)GetCurrentProcessId(), counter);
+    assert(written > 0);
+    assert((size_t)written < len);
+    assert(CreateDirectoryA(path, NULL) != 0);
+
+    // NOTE: forward slashes keep temp paths valid inside JSON options.
+    for (size_t i = 0; path[i] != '\0'; i++) {
+        if (path[i] == '\\') {
+            path[i] = '/';
         }
-        close(fds[0]);
-        close(fds[1]);
-        execl(
-            LIBYTDLP_TEST_PYTHON,
-            LIBYTDLP_TEST_PYTHON,
-            LIBYTDLP_SLOW_SERVER,
-            "0",
-            bytes,
-            rate,
-            (char*)NULL
-        );
-        _exit(127);
     }
+}
 
-    close(fds[1]);
+static void remove_tree(const char* dir) {
+    char pattern[512];
+    int written = snprintf(pattern, sizeof(pattern), "%s\\*", dir);
+    assert(written > 0);
+    assert((size_t)written < sizeof(pattern));
 
-    char line[64];
-    size_t used = 0;
+    WIN32_FIND_DATAA found = {0};
+    HANDLE listing = FindFirstFileA(pattern, &found);
+    assert(listing != INVALID_HANDLE_VALUE);
+
     for (;;) {
-        assert(used + 1 < sizeof(line));
-        ssize_t got = read(fds[0], line + used, 1);
-        assert(got == 1);
-        if (line[used] == '\n') {
-            line[used] = '\0';
+        if (strcmp(found.cFileName, ".") != 0 && strcmp(found.cFileName, "..") != 0) {
+            char child[512];
+            int child_written = snprintf(child, sizeof(child), "%s\\%s", dir, found.cFileName);
+            assert(child_written > 0);
+            assert((size_t)child_written < sizeof(child));
+            assert(DeleteFileA(child) != 0);
+        }
+
+        if (FindNextFileA(listing, &found) == 0) {
             break;
         }
-        used++;
     }
-    close(fds[0]);
 
-    int port = 0;
-    if (used > 5 && memcmp(line, "PORT ", 5) == 0) {
-        char* end = NULL;
-        long parsed = strtol(line + 5, &end, 10);
-        if (end != line + 5 && (*end == '\n' || *end == '\0') && parsed > 0 && parsed < 65536) {
-            port = (int)parsed;
-        }
-    }
-    assert(port > 0);
-    *port_out = port;
-    return child;
+    assert(GetLastError() == ERROR_NO_MORE_FILES);
+    assert(FindClose(listing) != 0);
+    assert(RemoveDirectoryA(dir) != 0);
 }
-
-static void stop_fixture(pid_t child) {
-    kill(child, SIGKILL);
-    int status = 0;
-    while (waitpid(child, &status, 0) < 0 && errno == EINTR) {
-    }
-}
-
+#else
 static void make_tmpdir(char* path, size_t len) {
     assert(len > 32);
     snprintf(path, len, "/tmp/ly_job_XXXXXX");
@@ -139,6 +154,7 @@ static void remove_tree(const char* dir) {
     assert(closedir(listing) == 0);
     assert(rmdir(dir) == 0);
 }
+#endif
 
 static void check_job_bogus_url(void) {
     ly_context* context = NULL;
@@ -162,7 +178,7 @@ static void check_job_bogus_url(void) {
         assert(status == LY_OK);
         assert(events != NULL);
         if (state == LY_JOB_RUNNING) {
-            usleep(10000);
+            sleep_between_polls();
         }
     }
     assert(state == LY_JOB_FAILED);
@@ -220,7 +236,7 @@ static void check_job_bogus_url(void) {
 
 static void check_job_cancel(void) {
     int port = 0;
-    pid_t child = spawn_fixture("20000000", "200000", &port);
+    ly_process child = spawn_fixture("20000000", "200000", &port);
 
     char dir[256];
     make_tmpdir(dir, sizeof(dir));
@@ -248,7 +264,7 @@ static void check_job_cancel(void) {
         assert(ly_job_poll(job, &state, &events, NULL) == LY_OK);
         assert(events != NULL);
         if (state == LY_JOB_RUNNING) {
-            usleep(10000);
+            sleep_between_polls();
         }
     }
 
@@ -297,7 +313,7 @@ static void check_job_cancel(void) {
 
 static void check_job_download_success(void) {
     int port = 0;
-    pid_t child = spawn_fixture("65536", "8000000", &port);
+    ly_process child = spawn_fixture("65536", "8000000", &port);
 
     char dir[256];
     make_tmpdir(dir, sizeof(dir));
@@ -355,7 +371,7 @@ static void check_job_download_success(void) {
 
 static void check_job_release_joins(void) {
     int port = 0;
-    pid_t child = spawn_fixture("65536", "8000000", &port);
+    ly_process child = spawn_fixture("65536", "8000000", &port);
 
     char dir[256];
     make_tmpdir(dir, sizeof(dir));
@@ -382,6 +398,34 @@ static void check_job_release_joins(void) {
     stop_fixture(child);
 }
 
+#ifdef _WIN32
+static int dir_is_empty(const char* dir) {
+    char pattern[512];
+    int written = snprintf(pattern, sizeof(pattern), "%s\\*", dir);
+    assert(written > 0);
+    assert((size_t)written < sizeof(pattern));
+
+    WIN32_FIND_DATAA found = {0};
+    HANDLE listing = FindFirstFileA(pattern, &found);
+    assert(listing != INVALID_HANDLE_VALUE);
+
+    int count = 0;
+
+    for (;;) {
+        if (strcmp(found.cFileName, ".") != 0 && strcmp(found.cFileName, "..") != 0) {
+            count++;
+        }
+
+        if (FindNextFileA(listing, &found) == 0) {
+            break;
+        }
+    }
+
+    assert(GetLastError() == ERROR_NO_MORE_FILES);
+    assert(FindClose(listing) != 0);
+    return count == 0;
+}
+#else
 static int dir_is_empty(const char* dir) {
     DIR* listing = opendir(dir);
     assert(listing != NULL);
@@ -402,10 +446,11 @@ static int dir_is_empty(const char* dir) {
     assert(closedir(listing) == 0);
     return count == 0;
 }
+#endif
 
 static void check_job_per_download_override(void) {
     int port = 0;
-    pid_t child = spawn_fixture("65536", "8000000", &port);
+    ly_process child = spawn_fixture("65536", "8000000", &port);
 
     char dir_a[256];
     make_tmpdir(dir_a, sizeof(dir_a));
@@ -467,7 +512,7 @@ static void check_job_per_download_override(void) {
 
 static void check_job_download_restricted(void) {
     int port = 0;
-    pid_t child = spawn_fixture("65536", "8000000", &port);
+    ly_process child = spawn_fixture("65536", "8000000", &port);
 
     char dir[256];
     make_tmpdir(dir, sizeof(dir));
@@ -523,7 +568,7 @@ static void check_job_download_restricted(void) {
 
 static void check_job_download_restricted_reject(void) {
     int port = 0;
-    pid_t child = spawn_fixture("65536", "8000000", &port);
+    ly_process child = spawn_fixture("65536", "8000000", &port);
 
     char dir_a[256];
     make_tmpdir(dir_a, sizeof(dir_a));
@@ -576,7 +621,11 @@ static void check_job_download_restricted_reject(void) {
     assert(strstr(details, "\"kind\":\"invalid_argument\"") != NULL);
     ly_error_release(error);
 
+#ifdef _WIN32
+    assert(_access(target, 0) != 0);
+#else
     assert(access(target, F_OK) != 0);
+#endif
     assert(dir_is_empty(dir_b));
 
     ly_job_release(job);
@@ -588,19 +637,30 @@ static void check_job_download_restricted_reject(void) {
     stop_fixture(child);
 }
 
-static char* save_env(const char* name) {
-    const char* value = getenv(name);
-    if (value == NULL) {
-        return NULL;
-    }
+#ifdef _WIN32
+static int closed_loopback_port(void) {
+    WSADATA data = {0};
+    assert(WSAStartup(MAKEWORD(2, 2), &data) == 0);
 
-    size_t len = strlen(value) + 1;
-    char* copy = malloc(len);
-    assert(copy != NULL);
-    memcpy(copy, value, len);
-    return copy;
+    SOCKET fd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    assert(fd != INVALID_SOCKET);
+
+    struct sockaddr_in addr;
+    memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    addr.sin_port = htons(0);
+    assert(bind(fd, (struct sockaddr*)&addr, sizeof(addr)) == 0);
+
+    int len = sizeof(addr);
+    assert(getsockname(fd, (struct sockaddr*)&addr, &len) == 0);
+    int port = ntohs(addr.sin_port);
+    assert(port > 0);
+    assert(closesocket(fd) == 0);
+    assert(WSACleanup() == 0);
+    return port;
 }
-
+#else
 static int closed_loopback_port(void) {
     int fd = socket(AF_INET, SOCK_STREAM, 0);
     assert(fd >= 0);
@@ -619,25 +679,13 @@ static int closed_loopback_port(void) {
     assert(close(fd) == 0);
     return port;
 }
+#endif
 
 static void check_job_closed_port_network(void) {
-    static const char* scrub[] = {
-        "http_proxy",
-        "https_proxy",
-        "all_proxy",
-        "HTTP_PROXY",
-        "HTTPS_PROXY",
-        "ALL_PROXY",
-    };
-    char* saved[6];
-    for (size_t i = 0; i < 6; i++) {
-        saved[i] = save_env(scrub[i]);
-        unsetenv(scrub[i]);
-    }
-    char* saved_lower = save_env("no_proxy");
-    char* saved_upper = save_env("NO_PROXY");
-    setenv("no_proxy", "*", 1);
-    setenv("NO_PROXY", "*", 1);
+    char* saved[PROXY_SCRUB_COUNT];
+    char* saved_lower = NULL;
+    char* saved_upper = NULL;
+    scrub_proxy_env(saved, &saved_lower, &saved_upper);
 
     int port = closed_loopback_port();
 
@@ -690,29 +738,11 @@ static void check_job_closed_port_network(void) {
     ly_job_release(job);
     assert(ly_context_release(context) == LY_OK);
 
-    for (size_t i = 0; i < 6; i++) {
-        if (saved[i] == NULL) {
-            unsetenv(scrub[i]);
-        } else {
-            setenv(scrub[i], saved[i], 1);
-            free(saved[i]);
-        }
-    }
-    if (saved_lower == NULL) {
-        unsetenv("no_proxy");
-    } else {
-        setenv("no_proxy", saved_lower, 1);
-        free(saved_lower);
-    }
-    if (saved_upper == NULL) {
-        unsetenv("NO_PROXY");
-    } else {
-        setenv("NO_PROXY", saved_upper, 1);
-        free(saved_upper);
-    }
+    restore_proxy_env(saved, saved_lower, saved_upper);
 }
 
 int main(void) {
+    setvbuf(stdout, NULL, _IONBF, 0);
     assert(ly_abi_version() == LIBYTDLP_ABI_VERSION);
     printf("abi %u\n", ly_abi_version());
 

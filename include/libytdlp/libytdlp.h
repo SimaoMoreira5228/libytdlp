@@ -14,7 +14,9 @@ extern "C" {
 #define LY_NOEXCEPT
 #endif
 
-#if defined(_WIN32) && defined(LY_BUILDING_SHARED)
+#if defined(_WIN32) && defined(LY_STATIC)
+#define LY_API
+#elif defined(_WIN32) && defined(LY_BUILDING_SHARED)
 #define LY_API __declspec(dllexport)
 #elif defined(_WIN32)
 #define LY_API __declspec(dllimport)

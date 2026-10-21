@@ -3,17 +3,18 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include <errno.h>
-#include <signal.h>
-#include <sys/types.h>
-#include <sys/wait.h>
-#include <unistd.h>
-
-#include <pthread.h>
-
 #include <Python.h>
 
+#ifdef _WIN32
+#include <process.h>
+#include <windows.h>
+#else
+#include <pthread.h>
+#endif
+
 #include <libytdlp/libytdlp.h>
+
+#include "fixture.h"
 
 static void check_host_owned_interpreter(void) {
     Py_Initialize();
@@ -149,7 +150,11 @@ static void check_unsupported_url(void) {
     assert(ly_context_release(context) == LY_OK);
 }
 
+#ifdef _WIN32
+static unsigned __stdcall extract_bad_url(void* arg) {
+#else
 static void* extract_bad_url(void* arg) {
+#endif
     static const char url[] = "ly-bogus://no-such-scheme-xyz";
 
     ly_result* result = NULL;
@@ -159,14 +164,32 @@ static void* extract_bad_url(void* arg) {
     assert(status != LY_OK);
     assert(result == NULL);
     ly_error_release(error);
+#ifdef _WIN32
+    return 0;
+#else
     return NULL;
+#endif
 }
 
 static void check_concurrent_extract(void) {
     ly_context* context = NULL;
     assert(ly_context_create(NULL, 0, &context, NULL) == LY_OK);
 
+#ifdef _WIN32
+    HANDLE workers[8];
+
+    for (int i = 0; i < 8; i++) {
+        workers[i] = (HANDLE)_beginthreadex(NULL, 0, extract_bad_url, context, 0, NULL);
+        assert(workers[i] != NULL);
+    }
+
+    for (int i = 0; i < 8; i++) {
+        assert(WaitForSingleObject(workers[i], INFINITE) == WAIT_OBJECT_0);
+        assert(CloseHandle(workers[i]) != 0);
+    }
+#else
     pthread_t workers[8];
+
     for (int i = 0; i < 8; i++) {
         assert(pthread_create(&workers[i], NULL, extract_bad_url, context) == 0);
     }
@@ -174,6 +197,7 @@ static void check_concurrent_extract(void) {
     for (int i = 0; i < 8; i++) {
         assert(pthread_join(workers[i], NULL) == 0);
     }
+#endif
 
     assert(ly_context_release(context) == LY_OK);
 }
@@ -229,104 +253,14 @@ static void check_network_url(void) {
     assert(ly_context_release(context) == LY_OK);
 }
 
-static pid_t spawn_fixture(int* port_out) {
-    int fds[2];
-    assert(pipe(fds) == 0);
-
-    pid_t child = fork();
-    assert(child >= 0);
-
-    if (child == 0) {
-        while (dup2(fds[1], STDOUT_FILENO) < 0 && errno == EINTR) {
-        }
-        close(fds[0]);
-        close(fds[1]);
-        execl(
-            LIBYTDLP_TEST_PYTHON,
-            LIBYTDLP_TEST_PYTHON,
-            LIBYTDLP_SLOW_SERVER,
-            "0",
-            "65536",
-            "8000000",
-            (char*)NULL
-        );
-        _exit(127);
-    }
-
-    close(fds[1]);
-
-    char line[64];
-    size_t used = 0;
-    for (;;) {
-        assert(used + 1 < sizeof(line));
-        ssize_t got = read(fds[0], line + used, 1);
-        assert(got == 1);
-        if (line[used] == '\n') {
-            line[used] = '\0';
-            break;
-        }
-        used++;
-    }
-    close(fds[0]);
-
-    int port = 0;
-    if (used > 5 && memcmp(line, "PORT ", 5) == 0) {
-        char* end = NULL;
-        long parsed = strtol(line + 5, &end, 10);
-        if (end != line + 5 && (*end == '\n' || *end == '\0') && parsed > 0 && parsed < 65536) {
-            port = (int)parsed;
-        }
-    }
-    assert(port > 0);
-    *port_out = port;
-    return child;
-}
-
-static void stop_fixture(pid_t child) {
-    kill(child, SIGKILL);
-
-    int status = 0;
-    while (waitpid(child, &status, 0) < 0 && errno == EINTR) {
-    }
-}
-
-static char* save_env_value(const char* name) {
-    const char* value = getenv(name);
-
-    if (value == NULL) {
-        return NULL;
-    }
-
-    size_t len = strlen(value) + 1;
-    char* copy = malloc(len);
-    assert(copy != NULL);
-    memcpy(copy, value, len);
-    return copy;
-}
-
 static void check_extract_per_call_override(void) {
-    static const char* scrub[] = {
-        "http_proxy",
-        "https_proxy",
-        "all_proxy",
-        "HTTP_PROXY",
-        "HTTPS_PROXY",
-        "ALL_PROXY",
-    };
-    char* saved[6];
-
-    for (size_t i = 0; i < 6; i++) {
-        saved[i] = save_env_value(scrub[i]);
-        unsetenv(scrub[i]);
-    }
-
-    char* saved_lower = save_env_value("no_proxy");
-    char* saved_upper = save_env_value("NO_PROXY");
-    setenv("no_proxy", "*", 1);
-    setenv("NO_PROXY", "*", 1);
+    char* saved[PROXY_SCRUB_COUNT];
+    char* saved_lower = NULL;
+    char* saved_upper = NULL;
+    scrub_proxy_env(saved, &saved_lower, &saved_upper);
 
     int port = 0;
-    pid_t child = spawn_fixture(&port);
+    ly_process child = spawn_fixture("65536", "8000000", &port);
 
     char url[128];
     snprintf(url, sizeof(url), "http://127.0.0.1:%d/file.bin", port);
@@ -421,31 +355,11 @@ static void check_extract_per_call_override(void) {
 
     stop_fixture(child);
 
-    for (size_t i = 0; i < 6; i++) {
-        if (saved[i] == NULL) {
-            unsetenv(scrub[i]);
-        } else {
-            setenv(scrub[i], saved[i], 1);
-            free(saved[i]);
-        }
-    }
-
-    if (saved_lower == NULL) {
-        unsetenv("no_proxy");
-    } else {
-        setenv("no_proxy", saved_lower, 1);
-        free(saved_lower);
-    }
-
-    if (saved_upper == NULL) {
-        unsetenv("NO_PROXY");
-    } else {
-        setenv("NO_PROXY", saved_upper, 1);
-        free(saved_upper);
-    }
+    restore_proxy_env(saved, saved_lower, saved_upper);
 }
 
 int main(void) {
+    setvbuf(stdout, NULL, _IONBF, 0);
     assert(ly_abi_version() == LIBYTDLP_ABI_VERSION);
     printf("abi %u\n", ly_abi_version());
 

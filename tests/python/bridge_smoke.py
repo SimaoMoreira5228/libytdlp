@@ -374,7 +374,11 @@ def check_find_executables():
         python_path = shutil.which("python3")
         assert python_path, "python3 must resolve on PATH"
         python_dir = os.path.dirname(python_path)
-        assert find_executable("python3", [python_dir]) == python_path
+        if sys.platform == "win32":
+            python_name = os.path.basename(python_path)
+            assert find_executable(python_name, [python_dir]) == python_path
+        else:
+            assert find_executable("python3", [python_dir]) == python_path
     finally:
         os.rmdir(scratch)
 
