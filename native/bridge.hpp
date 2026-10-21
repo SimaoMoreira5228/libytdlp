@@ -5,6 +5,8 @@
 
 #include <string>
 
+#include <Python.h>
+
 namespace libytdlp {
 
 struct BridgeResult {
@@ -15,6 +17,12 @@ struct BridgeResult {
 };
 
 BridgeResult extract_json(const std::string& url, const std::string& options);
+BridgeResult download_json(
+    const std::string& url,
+    const std::string& options,
+    PyObject* events,
+    PyObject* cancel_event
+);
 BridgeResult runtime_info_json();
 
 } // namespace libytdlp

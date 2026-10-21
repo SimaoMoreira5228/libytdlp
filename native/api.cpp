@@ -7,6 +7,7 @@
 #include <string>
 
 #include "bridge.hpp"
+#include "jobs.hpp"
 #include "runtime.hpp"
 
 namespace {
@@ -259,6 +260,159 @@ ly_status ly_result_json(const ly_result* result, const char** data, size_t* len
 
 void ly_result_release(ly_result* result) noexcept {
     delete reinterpret_cast<LyResult*>(result);
+}
+
+ly_status ly_download_start(
+    ly_context* context,
+    const char* url,
+    size_t url_len,
+    ly_job** out,
+    ly_error** error
+) noexcept {
+    try {
+        if (out == nullptr) {
+            store_error(error, make_error(LY_E_INVALID_ARGUMENT, "out must not be null"));
+            return LY_E_INVALID_ARGUMENT;
+        }
+        *out = nullptr;
+
+        if (error != nullptr) {
+            *error = nullptr;
+        }
+
+        if (context == nullptr) {
+            store_error(error, make_error(LY_E_INVALID_ARGUMENT, "context must not be null"));
+            return LY_E_INVALID_ARGUMENT;
+        }
+
+        if (url == nullptr || url_len == 0) {
+            store_error(error, make_error(LY_E_INVALID_ARGUMENT, "url must not be empty"));
+            return LY_E_INVALID_ARGUMENT;
+        }
+
+        if (!ensure_runtime(error)) {
+            return LY_E_RUNTIME;
+        }
+
+        std::string url_text(url, url_len);
+        std::string options = reinterpret_cast<LyContext*>(context)->options;
+
+        std::string failure;
+        libytdlp::DownloadJob* job =
+            libytdlp::DownloadJob::create(std::move(url_text), std::move(options), failure);
+        if (job == nullptr) {
+            store_error(error, make_error(LY_E_RUNTIME, failure));
+            return LY_E_RUNTIME;
+        }
+
+        *out = reinterpret_cast<ly_job*>(job);
+        return LY_OK;
+    } catch (const std::exception& caught) {
+        report(error, LY_E_INTERNAL, caught.what());
+        return LY_E_INTERNAL;
+    } catch (...) {
+        report(error, LY_E_INTERNAL, "unknown download start failure");
+        return LY_E_INTERNAL;
+    }
+}
+
+ly_status
+ly_job_poll(ly_job* job, ly_job_state* state, ly_result** events, ly_error** error) noexcept {
+    try {
+        if (events == nullptr) {
+            store_error(error, make_error(LY_E_INVALID_ARGUMENT, "events must not be null"));
+            return LY_E_INVALID_ARGUMENT;
+        }
+        *events = nullptr;
+
+        if (error != nullptr) {
+            *error = nullptr;
+        }
+
+        if (job == nullptr) {
+            store_error(error, make_error(LY_E_INVALID_ARGUMENT, "job must not be null"));
+            return LY_E_INVALID_ARGUMENT;
+        }
+
+        if (state == nullptr) {
+            store_error(error, make_error(LY_E_INVALID_ARGUMENT, "state must not be null"));
+            return LY_E_INVALID_ARGUMENT;
+        }
+
+        std::string events_json;
+        ly_job_state current = reinterpret_cast<libytdlp::DownloadJob*>(job)->poll(events_json);
+
+        auto result = std::make_unique<LyResult>();
+        result->json = std::move(events_json);
+
+        *events = reinterpret_cast<ly_result*>(result.release());
+        *state = current;
+        return LY_OK;
+    } catch (const std::exception& caught) {
+        report(error, LY_E_INTERNAL, caught.what());
+        return LY_E_INTERNAL;
+    } catch (...) {
+        report(error, LY_E_INTERNAL, "unknown job poll failure");
+        return LY_E_INTERNAL;
+    }
+}
+
+ly_status ly_job_wait(ly_job* job, ly_result** out, ly_error** error) noexcept {
+    try {
+        if (out == nullptr) {
+            store_error(error, make_error(LY_E_INVALID_ARGUMENT, "out must not be null"));
+            return LY_E_INVALID_ARGUMENT;
+        }
+        *out = nullptr;
+
+        if (error != nullptr) {
+            *error = nullptr;
+        }
+
+        if (job == nullptr) {
+            store_error(error, make_error(LY_E_INVALID_ARGUMENT, "job must not be null"));
+            return LY_E_INVALID_ARGUMENT;
+        }
+
+        std::string json;
+        ly_status status = LY_OK;
+        std::string message;
+        reinterpret_cast<libytdlp::DownloadJob*>(job)->wait(json, status, message);
+
+        if (status != LY_OK) {
+            store_error(error, make_error(status, message));
+            return status;
+        }
+
+        auto result = std::make_unique<LyResult>();
+        result->json = std::move(json);
+
+        *out = reinterpret_cast<ly_result*>(result.release());
+        return LY_OK;
+    } catch (const std::exception& caught) {
+        report(error, LY_E_INTERNAL, caught.what());
+        return LY_E_INTERNAL;
+    } catch (...) {
+        report(error, LY_E_INTERNAL, "unknown job wait failure");
+        return LY_E_INTERNAL;
+    }
+}
+
+ly_status ly_job_cancel(ly_job* job) noexcept {
+    try {
+        if (job == nullptr) {
+            return LY_E_INVALID_ARGUMENT;
+        }
+
+        reinterpret_cast<libytdlp::DownloadJob*>(job)->cancel();
+        return LY_OK;
+    } catch (...) {
+        return LY_E_INTERNAL;
+    }
+}
+
+void ly_job_release(ly_job* job) noexcept {
+    delete reinterpret_cast<libytdlp::DownloadJob*>(job);
 }
 
 ly_status ly_error_code(const ly_error* error) noexcept {

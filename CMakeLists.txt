@@ -60,6 +60,7 @@ message(STATUS "yt-dlp commit: ${LIBYTDLP_YTDLP_COMMIT}")
 add_library(ytdlp SHARED
     native/api.cpp
     native/bridge.cpp
+    native/jobs.cpp
     native/runtime.cpp
 )
 add_library(libytdlp::ytdlp ALIAS ytdlp)
@@ -127,6 +128,10 @@ if(BUILD_TESTING)
     add_executable(ly_smoke tests/native/smoke.c)
     target_include_directories(ly_smoke PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
     target_link_libraries(ly_smoke PRIVATE ytdlp Threads::Threads)
+    target_compile_definitions(ly_smoke PRIVATE
+        LIBYTDLP_TEST_PYTHON="${Python_EXECUTABLE}"
+        LIBYTDLP_SLOW_SERVER="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/slow_server.py"
+    )
 
     add_library(ly_header_check_c OBJECT tests/native/header_check.c)
     target_include_directories(ly_header_check_c PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)

@@ -63,9 +63,56 @@ ly_context_release(ctx);
 
 Output handles come back NULL on failure. The JSON pointer is borrowed, it dies with the result. Releasing NULL is safe. Error messages are borrowed the same way.
 
-Options go in as a JSON object string at context creation. Anything `YoutubeDL` accepts passes through, so check upstream docs for the full list. Downloads stay off for now, that switch is forced until the job API lands.
+Options go in as a JSON object string at context creation. Anything `YoutubeDL` accepts passes through, so check upstream docs for the full list.
 
 Python-side failures surface as `LY_E_EXTRACT`. Bad JSON or empty URLs are `LY_E_INVALID_ARGUMENT`. `LY_E_NETWORK` exists but nothing reports it yet, transport errors still arrive as extract errors.
+
+## Jobs
+
+Downloads run as jobs. You start one, poll it for progress, then wait for the final result. Or skip polling and just wait.
+
+```c
+ly_job* job = NULL;
+if (ly_download_start(ctx, url, strlen(url), &job, &err) != LY_OK) {
+    fprintf(stderr, "%s\n", ly_error_message(err));
+    ly_error_release(err);
+    return 1;
+}
+
+for (;;) {
+    ly_job_state state = LY_JOB_RUNNING;
+    ly_result* events = NULL;
+    ly_job_poll(job, &state, &events, NULL);
+
+    const char* data = NULL;
+    size_t len = 0;
+    ly_result_json(events, &data, &len);
+    printf("state %d, %.*s\n", state, (int)len, data);
+    ly_result_release(events);
+
+    if (state != LY_JOB_RUNNING) {
+        break;
+    }
+}
+
+ly_result* res = NULL;
+if (ly_job_wait(job, &res, &err) != LY_OK) {
+    fprintf(stderr, "%s\n", ly_error_message(err));
+    ly_error_release(err);
+    ly_job_release(job);
+    return 1;
+}
+
+ly_job_release(job);
+```
+
+`ly_job_poll` never blocks. It hands you the current state plus every progress event since your last poll, as a JSON array. Once the job is done the array is always empty, so drain what you need while it's running. `ly_job_wait` blocks until the end and gives you a fresh info result each time you call it, same deal on repeat calls. Call it as often as you like.
+
+Cancel with `ly_job_cancel`. It's a suggestion, not a kill switch: yt-dlp only notices between chunks, so a fast download can finish before your cancel lands. In that case you get `DONE`, not `CANCELLED`, which is the honest answer. Hammer it all you want, it's idempotent, and calling it on a finished job is a no-op.
+
+`ly_job_release` on a running job waits for the worker to finish, so don't call it from a thread that's in a hurry. Releasing NULL is fine, like the other release functions. Everything else rejects a NULL job.
+
+Where files land is your call. Pass `outtmpl` (and `paths`, `format`, whatever else) through the context options and yt-dlp does the rest. The library doesn't fence you into a directory in M3, so pick templates that stay where you expect. Same goes for FFmpeg: still external, still found on `PATH` unless you point elsewhere. Downloads that need postprocessing fail without it.
 
 ## Checks
 
