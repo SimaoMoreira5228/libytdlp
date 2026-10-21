@@ -80,9 +80,13 @@ jobs:
         run: cargo +nightly fmt --check
       - name: Clippy
         working-directory: bindings/rust
+        env:
+          LIBYTDLP_LIB_DIR: ${{ github.workspace }}/build
         run: cargo clippy --locked --all-targets -- -D warnings
       - name: Build
         working-directory: bindings/rust
+        env:
+          LIBYTDLP_LIB_DIR: ${{ github.workspace }}/build
         run: cargo build --locked
       - name: Test
         working-directory: bindings/rust

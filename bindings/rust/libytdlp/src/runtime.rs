@@ -70,6 +70,7 @@ pub fn abi_version() -> u32 {
     unsafe { sys::ly_abi_version() }
 }
 
+#[tracing::instrument(name = "libytdlp.runtime_info", level = "debug")]
 pub fn runtime_info() -> Result<RuntimeInfo, Error> {
     let mut result: *mut sys::LyResult = ptr::null_mut();
     let mut error: *mut sys::LyError = ptr::null_mut();

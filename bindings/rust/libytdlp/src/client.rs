@@ -32,6 +32,7 @@ impl Client {
         Ok(Self { raw: context })
     }
 
+    #[tracing::instrument(name = "libytdlp.extract", level = "debug", skip(self, url))]
     pub fn extract(&self, url: &str) -> Result<MediaInfo, Error> {
         if url.as_bytes().contains(&0) {
             return Err(Error::new(
@@ -60,6 +61,7 @@ impl Client {
         MediaInfo::from_raw(result)
     }
 
+    #[tracing::instrument(name = "libytdlp.download", level = "debug", skip(self, url, options))]
     pub fn download(&self, url: &str, options: &str) -> Result<DownloadJob, Error> {
         if url.as_bytes().contains(&0) {
             return Err(Error::new(

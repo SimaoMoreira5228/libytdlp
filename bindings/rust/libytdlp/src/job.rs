@@ -43,6 +43,7 @@ impl DownloadJob {
         Self { raw }
     }
 
+    #[tracing::instrument(name = "libytdlp.poll", level = "debug", skip(self))]
     pub fn poll(&self) -> Result<(JobState, Vec<ProgressEvent>), Error> {
         let mut state: u32 = sys::LY_JOB_RUNNING;
         let mut events: *mut sys::LyResult = ptr::null_mut();
@@ -60,13 +61,15 @@ impl DownloadJob {
 
         let values: Vec<serde_json::Value> = serde_json::from_str(&text)
             .map_err(|failed| Error::new(Kind::Internal, failed.to_string()))?;
+        let values: Vec<ProgressEvent> =
+            values.into_iter().map(ProgressEvent::from_value).collect();
 
-        Ok((
-            state,
-            values.into_iter().map(ProgressEvent::from_value).collect(),
-        ))
+        tracing::debug!(events = values.len(), "libytdlp poll drained");
+
+        Ok((state, values))
     }
 
+    #[tracing::instrument(name = "libytdlp.wait", level = "debug", skip(self))]
     pub fn wait(&self) -> Result<MediaInfo, Error> {
         let mut result: *mut sys::LyResult = ptr::null_mut();
         let mut error: *mut sys::LyError = ptr::null_mut();

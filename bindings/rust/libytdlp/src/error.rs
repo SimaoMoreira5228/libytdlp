@@ -61,6 +61,10 @@ impl Error {
         self.exception_class.as_deref()
     }
 
+    pub(crate) fn log(&self) {
+        tracing::debug!(kind = self.kind.as_str(), "libytdlp call failed");
+    }
+
     pub(crate) fn new(kind: Kind, message: impl Into<String>) -> Self {
         Self {
             kind,
@@ -99,7 +103,9 @@ impl Error {
 
     pub(crate) fn from_ptr(error: *mut sys::LyError) -> Self {
         if error.is_null() {
-            return Self::new(Kind::Internal, "libytdlp reported failure without detail");
+            let failure = Self::new(Kind::Internal, "libytdlp reported failure without detail");
+            failure.log();
+            return failure;
         }
 
         let code = unsafe { sys::ly_error_code(error) };
@@ -122,12 +128,15 @@ impl Error {
 
         let kind = Kind::from_status(code);
 
-        if text.is_empty() {
-            return Self::new(kind, format!("libytdlp error: {}", kind.as_str()))
-                .with_class(exception_class);
-        }
+        let failure = if text.is_empty() {
+            Self::new(kind, format!("libytdlp error: {}", kind.as_str()))
+                .with_class(exception_class)
+        } else {
+            Self::new(kind, text).with_class(exception_class)
+        };
+        failure.log();
 
-        Self::new(kind, text).with_class(exception_class)
+        failure
     }
 }
 

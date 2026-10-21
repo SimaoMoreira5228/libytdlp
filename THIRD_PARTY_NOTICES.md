@@ -48,8 +48,15 @@ is Apache-2.0 (see LICENSE). Nothing below is relicensed by us.
 - `serde_json` (MIT OR Apache-2.0): parses the JSON the bridge
   returns into that `Value`. Pure Rust, no platform code. Unknown
   upstream fields are kept instead of dropped.
+- `tracing` (MIT, `std` + `attributes` features only): spans around
+  blocking FFI calls and `DEBUG`-only failure events carrying the error
+  kind. Pure Rust, no platform code, no subscriber bundled. Callers
+  control verbosity; values that may hold credentials (URLs, messages)
+  are never recorded, only operation names, kinds, and counts.
 - Transitive build deps (`serde_core`, `serde_derive`, `syn`,
-  `quote`, `proc-macro2`, `unicode-ident`, `itoa`, `memchr`, `zmij`)
-  are all permissive (MIT OR Apache-2.0, plus Unlicense for `memchr`
-  and Unicode-3.0 for `unicode-ident`'s tables). Their build scripts
-  only probe rustc cfgs and target widths. No C code, no network.
+  `quote`, `proc-macro2`, `unicode-ident`, `itoa`, `memchr`, `zmij`,
+  `tracing-core`, `tracing-attributes`, `once_cell`,
+  `pin-project-lite`) are all permissive: MIT and/or Apache-2.0,
+  except Unlicense for `memchr` and Unicode-3.0 for
+  `unicode-ident`'s tables. Their build scripts only probe rustc
+  cfgs and target widths. No C code, no network.
