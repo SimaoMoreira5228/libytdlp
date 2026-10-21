@@ -78,8 +78,33 @@ include/libytdlp/   the C ABI. This is the contract.
 native/             C++23 guts: interpreter lifetime, bridge calls, ABI surface.
 python/             the adapter. Thin on purpose, no per-site code lives here.
 tests/              C smoke test plus bridge checks. Offline by default.
-bindings/rust/      not yet. M2.
+bindings/rust/      `libytdlp-sys` (raw FFI) and `libytdlp` (safe wrapper).
 ```
+
+## Rust bindings
+
+Two crates live in `bindings/rust`. `libytdlp-sys` is the raw FFI. `libytdlp` is the wrapper you actually want.
+
+Build the native library first. Cargo doesn't do that part.
+
+```bash
+cmake -S . -B build
+cmake --build build
+cd bindings/rust
+LIBYTDLP_LIB_DIR=/path/to/repo/build cargo test
+```
+
+`LIBYTDLP_LIB_DIR` tells the `sys` build script where `libytdlp.so` lives. It also bakes an rpath into the test binaries, so they find the library without `LD_LIBRARY_PATH` games. Leave it unset and you get a plain system-wide link instead, which works once the library is installed.
+
+```rust
+let client = libytdlp::Client::new("{}")?;
+let info = client.extract("https://example.org/media")?;
+println!("{}", info.title().unwrap_or("unknown"));
+```
+
+Options are a JSON string passed straight to `YoutubeDL`, same as the C API. Offline tests run by default. Set `LIBYTDLP_TEST_URL` and the suite hits the network too, just like the C smoke test.
+
+CMake can build the crates as part of the unified build with `-DLIBYTDLP_BUILD_RUST=ON` (pinned Corrosion). Off by default. Plain `cargo build` never needs CMake or Corrosion.
 
 ## Pins
 

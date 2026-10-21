@@ -75,6 +75,17 @@ if(NOT WIN32)
     target_link_libraries(ytdlp PRIVATE Threads::Threads)
 endif()
 
+option(LIBYTDLP_BUILD_RUST "Build Rust bindings via Corrosion" OFF)
+if(LIBYTDLP_BUILD_RUST)
+    include(FetchContent)
+    FetchContent_Declare(Corrosion
+        GIT_REPOSITORY https://github.com/corrosion-rs/corrosion.git
+        GIT_TAG 1499b14e4906a2890f5cee1547c8848db261753d
+    )
+    FetchContent_MakeAvailable(Corrosion)
+    corrosion_import_crate(MANIFEST_PATH ${CMAKE_CURRENT_SOURCE_DIR}/bindings/rust/Cargo.toml)
+endif()
+
 install(TARGETS ytdlp
     EXPORT libytdlp-targets
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}

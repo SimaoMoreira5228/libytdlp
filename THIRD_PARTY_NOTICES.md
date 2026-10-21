@@ -26,3 +26,17 @@ is Apache-2.0 (see LICENSE). Nothing below is relicensed by us.
 - `pyproject.toml` pins `yt-dlp==2026.08.19` from PyPI for the local
   test venv. Same version as the submodule pin, different delivery.
   Keep them in sync.
+
+## Rust dependencies (bindings/rust, exact versions in bindings/rust/Cargo.lock)
+
+- `serde` (MIT OR Apache-2.0): derive-based parsing of extractor
+  metadata. Pure Rust, no platform code. One `serde_json::Value`
+  holds every extractor field, so no per-site structs are needed.
+- `serde_json` (MIT OR Apache-2.0): parses the JSON the bridge
+  returns into that `Value`. Pure Rust, no platform code. Unknown
+  upstream fields are kept instead of dropped.
+- Transitive build deps (`serde_core`, `serde_derive`, `syn`,
+  `quote`, `proc-macro2`, `unicode-ident`, `itoa`, `memchr`, `zmij`)
+  are all permissive (MIT OR Apache-2.0, plus Unlicense for `memchr`
+  and Unicode-3.0 for `unicode-ident`'s tables). Their build scripts
+  only probe rustc cfgs and target widths. No C code, no network.

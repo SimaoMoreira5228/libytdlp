@@ -4,6 +4,7 @@ build/
 __pycache__/
 *.pyc
 .venv/
+bindings/rust/target/
 *.so
 *.dylib
 *.dll
