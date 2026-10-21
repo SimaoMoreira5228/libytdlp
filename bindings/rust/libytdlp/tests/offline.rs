@@ -314,6 +314,40 @@ fn youtube_player_client_reaches_youtube_dl() {
 }
 
 #[test]
+fn extract_first_retries_then_succeeds() {
+    let server = FixtureServer::start(65536, 8_000_000);
+    let url = server.url("/file.bin");
+
+    let client = Client::new("{}").expect("default options must be accepted");
+
+    let info = client
+        .extract_first(&url, vec!["{not json}".to_owned(), "{}".to_owned()])
+        .expect("second options must succeed");
+
+    assert_eq!(info.id(), Some("file"));
+}
+
+#[test]
+fn extract_first_reports_last_error() {
+    let server = FixtureServer::start(65536, 8_000_000);
+    let url = server.url("/file.bin");
+
+    let client = Client::new("{}").expect("default options must be accepted");
+
+    let error = client
+        .extract_first(&url, Vec::new())
+        .expect_err("empty options must fail");
+
+    assert_eq!(error.kind(), Kind::InvalidArgument);
+
+    let error = client
+        .extract_first(&url, vec!["{not json}".to_owned()])
+        .expect_err("all-bad options must fail");
+
+    assert!(!error.message().is_empty());
+}
+
+#[test]
 fn extract_with_options_rejects_nul_bytes() {
     let client = Client::new("{}").expect("default options must be accepted");
 

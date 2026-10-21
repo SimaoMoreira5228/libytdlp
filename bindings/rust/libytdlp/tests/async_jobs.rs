@@ -177,7 +177,7 @@ fn async_extract_completes() {
 
     let client = Client::new("{}").expect("default options must be accepted");
 
-    let info = block_on(client.extract_async(&server.url("/file.bin")))
+    let info = block_on(client.extract_async(server.url("/file.bin")))
         .expect("async extract must succeed");
 
     assert!(info.raw_json().len() > 100);
@@ -198,7 +198,7 @@ fn concurrent_async_extracts_share_client() {
             let target = url.clone();
 
             std::thread::spawn(move || {
-                let info = block_on(shared.extract_async(&target))
+                let info = block_on(shared.extract_async(target))
                     .expect("concurrent extract must succeed");
 
                 assert_eq!(info.id(), Some("file"));

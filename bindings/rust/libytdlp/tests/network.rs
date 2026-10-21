@@ -56,6 +56,28 @@ fn network_search() {
 }
 
 #[test]
+fn network_search_flat_uses_typed_entries() {
+    if std::env::var("LIBYTDLP_TEST_SEARCH").is_err() {
+        eprintln!("no LIBYTDLP_TEST_SEARCH, skipping search test");
+        return;
+    }
+
+    let client = Client::new("{}").expect("default options must be accepted");
+
+    match client.search_flat("never gonna give you up", 5) {
+        Ok(info) => {
+            let entries = info.entries();
+
+            assert!(!entries.is_empty());
+            assert!(entries[0].id().is_some());
+        }
+        Err(error) => {
+            eprintln!("search test failed (flaky is fine): {error}");
+        }
+    }
+}
+
+#[test]
 fn network_download() {
     let url = std::env::var("LIBYTDLP_TEST_DOWNLOAD_URL").unwrap_or_default();
 

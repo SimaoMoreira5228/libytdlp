@@ -250,10 +250,35 @@ impl Client {
         MediaInfo::from_raw(result)
     }
 
+    #[tracing::instrument(name = "libytdlp.extract", level = "debug", skip(self, url, options))]
+    pub fn extract_first(&self, url: &str, options: Vec<String>) -> Result<MediaInfo, Error> {
+        if options.is_empty() {
+            return Err(Error::new(Kind::InvalidArgument, "no retry options"));
+        }
+
+        let mut last: Option<Error> = None;
+
+        for entry in &options {
+            match self.extract_with_options(url, entry) {
+                Ok(found) => return Ok(found),
+                Err(failed) => last = Some(failed),
+            }
+        }
+
+        Err(last.expect("non-empty options must leave an error"))
+    }
+
+    #[tracing::instrument(name = "libytdlp.search", level = "debug", skip(self, query))]
+    pub fn search_flat(&self, query: &str, limit: u32) -> Result<MediaInfo, Error> {
+        let target = format!("ytsearch{limit}:{query}");
+
+        self.extract_with_options(&target, r#"{"flat_playlist": true}"#)
+    }
+
     #[tracing::instrument(name = "libytdlp.extract_async", level = "debug", skip(self, url))]
-    pub fn extract_async(&self, url: &str) -> WaitForExtract {
+    pub fn extract_async(&self, url: String) -> WaitForExtract {
         WaitForExtract {
-            pending: Some((url.to_owned(), self.options.clone())),
+            pending: Some((url, self.options.clone())),
             shared: Arc::new(Shared {
                 waker: Mutex::new(None),
                 outcome: Mutex::new(None),
