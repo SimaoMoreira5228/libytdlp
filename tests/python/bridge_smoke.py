@@ -58,6 +58,21 @@ def check_runtime_info():
     print("runtime info ok")
 
 
+def check_cachedir_defaults_off():
+    from libytdlp_bridge.download import _params as download_params
+    from libytdlp_bridge.extract import _params as extract_params
+
+    assert extract_params({})["cachedir"] is False
+    assert download_params({}, [], None)["cachedir"] is False
+    assert extract_params({"cachedir": "/tmp/x"})["cachedir"] == "/tmp/x"
+
+    hook = download_params({}, [], None)["progress_hooks"]
+    custom = download_params({"progress_hooks": ["user"]}, [], None)["progress_hooks"]
+    assert len(hook) == 1 and callable(hook[0])
+    assert custom[0] == "user" and len(custom) == 2 and callable(custom[1])
+    print("cachedir defaults ok")
+
+
 def check_unsupported_url():
     try:
         extract_json("ly-bogus://no-such-scheme-xyz", "{}")
@@ -73,6 +88,7 @@ if __name__ == "__main__":
     check_dumps_round_trip()
     check_rejects_empty_url()
     check_rejects_non_object_options()
+    check_cachedir_defaults_off()
     check_runtime_info()
     check_unsupported_url()
     print("bridge ok")

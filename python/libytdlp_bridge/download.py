@@ -32,7 +32,7 @@ def _params(options, events, cancel_event):
         "quiet": True,
         "no_warnings": True,
         "logger": _SilentLogger(),
-        "progress_hooks": [hook],
+        "cachedir": False,
     }
 
     if options:

@@ -159,7 +159,9 @@ let info = client.extract("https://example.org/media")?;
 println!("{}", info.title().unwrap_or("unknown"));
 ```
 
-Options are a JSON string passed straight to `YoutubeDL`, same as the C API. Offline tests run by default. Set `LIBYTDLP_TEST_URL` and the suite hits the network too, just like the C smoke test. `runtime_info()` reports backend versions, the deployment profile, and whether the interpreter is host-owned.
+Options are a JSON string passed straight to `YoutubeDL`, same as the C API. Offline tests run by default. Set `LIBYTDLP_TEST_URL` and the suite hits the network too, just like the C smoke test. `LIBYTDLP_TEST_SEARCH` enables one live `ytsearch` query on top. `runtime_info()` reports backend versions, the deployment profile, and whether the interpreter is host-owned.
+
+`extract` blocks the calling thread. From tokio, wrap it in `spawn_blocking` against one shared `Client` and await that. There is no async wrapper yet, and the native side serializes concurrent calls anyway, so a dedicated blocking pool is the honest adapter.
 
 CMake can build the crates as part of the unified build with `-DLIBYTDLP_BUILD_RUST=ON` (pinned Corrosion). Off by default. Plain `cargo build` never needs CMake or Corrosion.
 

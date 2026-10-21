@@ -13,6 +13,7 @@ mod runtime;
 pub use client::Client;
 pub use error::{Error, Kind};
 pub use job::{DownloadJob, JobState};
+pub use media::Format;
 pub use media::MediaInfo;
 pub use progress::ProgressEvent;
 pub use runtime::{RuntimeInfo, abi_version, runtime_info};

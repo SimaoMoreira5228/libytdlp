@@ -24,6 +24,7 @@ def _params(options):
         "quiet": True,
         "no_warnings": True,
         "logger": _SilentLogger(),
+        "cachedir": False,
     }
 
     if options:
