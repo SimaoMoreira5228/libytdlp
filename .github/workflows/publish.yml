@@ -1,0 +1,104 @@
+name: publish
+
+on:
+  push:
+    tags:
+      - 'libytdlp-v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to publish (must match the Cargo manifests)'
+        required: true
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install system deps
+        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build python3-dev
+      - name: Build native lib for publish verification
+        run: |
+          cmake -S . -B build -G Ninja
+          cmake --build build --parallel
+      - name: Resolve version
+        id: version
+        run: |
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            VERSION="${GITHUB_REF_NAME#libytdlp-v}"
+          else
+            VERSION="${{ inputs.version }}"
+          fi
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "not an X.Y.Z version: $VERSION" >&2
+            exit 1
+          fi
+          for manifest in bindings/rust/libytdlp-sys/Cargo.toml bindings/rust/libytdlp/Cargo.toml; do
+            found="$(grep -m1 '^version = ' "$manifest" | cut -d'"' -f2)"
+            if [[ "$found" != "$VERSION" ]]; then
+              echo "$manifest says $found, expected $VERSION" >&2
+              exit 1
+            fi
+          done
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "publishing $VERSION"
+      - name: Skip if already published
+        id: published
+        run: |
+          if curl -fsSL "https://crates.io/api/v1/crates/libytdlp/${{ steps.version.outputs.version }}" -o /dev/null; then
+            echo "done=true" >> "$GITHUB_OUTPUT"
+            echo "libytdlp ${{ steps.version.outputs.version }} already on crates.io, nothing to do"
+          else
+            echo "done=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Dry run sys crate
+        if: steps.published.outputs.done != 'true'
+        working-directory: bindings/rust
+        env:
+          LIBYTDLP_LIB_DIR: ${{ github.workspace }}/build
+        run: cargo publish -p libytdlp-sys --dry-run
+      - name: Publish sys crate
+        if: steps.published.outputs.done != 'true'
+        working-directory: bindings/rust
+        env:
+          LIBYTDLP_LIB_DIR: ${{ github.workspace }}/build
+        run: cargo publish -p libytdlp-sys
+      - name: Wait for sys crate on the index
+        if: steps.published.outputs.done != 'true'
+        run: |
+          for attempt in $(seq 1 30); do
+            if curl -fsSL "https://crates.io/api/v1/crates/libytdlp-sys/${{ steps.version.outputs.version }}" -o /dev/null; then
+              echo "libytdlp-sys visible after $attempt checks"
+              exit 0
+            fi
+            sleep 20
+          done
+          echo "libytdlp-sys never appeared on the index" >&2
+          exit 1
+      - name: Dry run safe crate
+        if: steps.published.outputs.done != 'true'
+        working-directory: bindings/rust
+        env:
+          LIBYTDLP_LIB_DIR: ${{ github.workspace }}/build
+        run: cargo publish -p libytdlp --dry-run
+      - name: Publish safe crate
+        if: steps.published.outputs.done != 'true'
+        working-directory: bindings/rust
+        env:
+          LIBYTDLP_LIB_DIR: ${{ github.workspace }}/build
+        run: cargo publish -p libytdlp
+      - name: Create GitHub release
+        if: github.ref_type == 'tag' && steps.published.outputs.done != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "libytdlp-v${{ steps.version.outputs.version }}" \
+            --title "libytdlp ${{ steps.version.outputs.version }}" \
+            --generate-notes

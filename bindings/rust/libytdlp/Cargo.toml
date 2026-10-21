@@ -5,6 +5,7 @@ edition = "2024"
 rust-version = "1.85"
 license = "Apache-2.0"
 description = "Safe Rust wrapper around the libytdlp C ABI"
+repository = "https://github.com/SimaoMoreira5228/libytdlp"
 
 [lib]
 crate-type = ["rlib", "staticlib"]
