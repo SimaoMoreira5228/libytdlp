@@ -60,11 +60,18 @@ impl Client {
         MediaInfo::from_raw(result)
     }
 
-    pub fn download(&self, url: &str) -> Result<DownloadJob, Error> {
+    pub fn download(&self, url: &str, options: &str) -> Result<DownloadJob, Error> {
         if url.as_bytes().contains(&0) {
             return Err(Error::new(
                 Kind::InvalidArgument,
                 "url must not contain NUL bytes",
+            ));
+        }
+
+        if options.as_bytes().contains(&0) {
+            return Err(Error::new(
+                Kind::InvalidArgument,
+                "options must not contain NUL bytes",
             ));
         }
 
@@ -76,6 +83,8 @@ impl Client {
                 self.raw,
                 url.as_ptr().cast(),
                 url.len(),
+                options.as_ptr().cast(),
+                options.len(),
                 &mut job,
                 &mut error,
             )

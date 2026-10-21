@@ -1,5 +1,6 @@
 use std::ffi::CStr;
 use std::fmt;
+use std::ptr;
 
 use libytdlp_sys as sys;
 
@@ -44,6 +45,7 @@ impl Kind {
 pub struct Error {
     kind: Kind,
     message: String,
+    exception_class: Option<String>,
 }
 
 impl Error {
@@ -55,11 +57,44 @@ impl Error {
         &self.message
     }
 
+    pub fn exception_class(&self) -> Option<&str> {
+        self.exception_class.as_deref()
+    }
+
     pub(crate) fn new(kind: Kind, message: impl Into<String>) -> Self {
         Self {
             kind,
             message: message.into(),
+            exception_class: None,
         }
+    }
+
+    fn with_class(mut self, exception_class: Option<String>) -> Self {
+        self.exception_class = exception_class;
+
+        self
+    }
+
+    fn read_exception_class(error: *mut sys::LyError) -> Option<String> {
+        let mut data: *const std::ffi::c_char = ptr::null();
+        let mut len: usize = 0;
+
+        let status = unsafe { sys::ly_error_details_json(error, &mut data, &mut len) };
+
+        if status != sys::LY_OK || data.is_null() {
+            return None;
+        }
+
+        let bytes = unsafe { std::slice::from_raw_parts(data.cast::<u8>(), len) };
+
+        let text = std::str::from_utf8(bytes).ok()?;
+
+        let value: serde_json::Value = serde_json::from_str(text).ok()?;
+
+        value
+            .get("class")
+            .and_then(|class| class.as_str())
+            .map(str::to_owned)
     }
 
     pub(crate) fn from_ptr(error: *mut sys::LyError) -> Self {
@@ -79,6 +114,8 @@ impl Error {
             }
         };
 
+        let exception_class = Self::read_exception_class(error);
+
         unsafe {
             sys::ly_error_release(error);
         }
@@ -86,10 +123,11 @@ impl Error {
         let kind = Kind::from_status(code);
 
         if text.is_empty() {
-            return Self::new(kind, format!("libytdlp error: {}", kind.as_str()));
+            return Self::new(kind, format!("libytdlp error: {}", kind.as_str()))
+                .with_class(exception_class);
         }
 
-        Self::new(kind, text)
+        Self::new(kind, text).with_class(exception_class)
     }
 }
 

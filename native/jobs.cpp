@@ -9,8 +9,9 @@
 
 namespace libytdlp {
 
-DownloadJob::DownloadJob(std::string url, std::string options) :
-    url_(std::move(url)), options_(std::move(options)) {
+DownloadJob::DownloadJob(std::string url, std::string context_options, std::string job_options) :
+    url_(std::move(url)), context_options_(std::move(context_options)),
+    job_options_(std::move(job_options)) {
 }
 
 DownloadJob::~DownloadJob() {
@@ -25,8 +26,14 @@ DownloadJob::~DownloadJob() {
     }
 }
 
-DownloadJob* DownloadJob::create(std::string url, std::string options, std::string& error) {
-    DownloadJob* job = new (std::nothrow) DownloadJob(std::move(url), std::move(options));
+DownloadJob* DownloadJob::create(
+    std::string url,
+    std::string context_options,
+    std::string job_options,
+    std::string& error
+) {
+    DownloadJob* job = new (std::nothrow)
+        DownloadJob(std::move(url), std::move(context_options), std::move(job_options));
     if (job == nullptr) {
         error = "could not allocate download job";
         return nullptr;
@@ -96,7 +103,7 @@ void DownloadJob::run() {
 
     {
         GilGuard guard;
-        called = download_json(url_, options_, events_, cancel_event_);
+        called = download_json(url_, context_options_, job_options_, events_, cancel_event_);
     }
 
     std::lock_guard<std::mutex> lock(mutex_);
@@ -106,14 +113,17 @@ void DownloadJob::run() {
         outcome_json_ = std::move(called.json);
         outcome_status_ = LY_OK;
         outcome_message_.clear();
+        outcome_class_.clear();
     } else if (called.status == LY_E_CANCELLED) {
         state_ = LY_JOB_CANCELLED;
         outcome_status_ = LY_E_CANCELLED;
         outcome_message_ = std::move(called.message);
+        outcome_class_ = std::move(called.exception_class);
     } else {
         state_ = LY_JOB_FAILED;
         outcome_status_ = called.status;
         outcome_message_ = std::move(called.message);
+        outcome_class_ = std::move(called.exception_class);
     }
 
     done_.notify_all();
@@ -181,7 +191,12 @@ ly_job_state DownloadJob::poll(std::string& events_json) {
     return LY_JOB_RUNNING;
 }
 
-void DownloadJob::wait(std::string& json_out, ly_status& status_out, std::string& message_out) {
+void DownloadJob::wait(
+    std::string& json_out,
+    ly_status& status_out,
+    std::string& message_out,
+    std::string& class_out
+) {
     std::unique_lock<std::mutex> lock(mutex_);
 
     done_.wait(lock, [this] {
@@ -192,12 +207,14 @@ void DownloadJob::wait(std::string& json_out, ly_status& status_out, std::string
         json_out = outcome_json_;
         status_out = LY_OK;
         message_out.clear();
+        class_out.clear();
         return;
     }
 
     json_out.clear();
     status_out = outcome_status_;
     message_out = outcome_message_;
+    class_out = outcome_class_;
 }
 
 void DownloadJob::cancel() {

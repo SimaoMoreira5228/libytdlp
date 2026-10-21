@@ -57,10 +57,18 @@ unsafe extern "C" {
 
     pub fn ly_error_message(error: *const LyError) -> *const c_char;
 
+    pub fn ly_error_details_json(
+        error: *const LyError,
+        data: *mut *const c_char,
+        len: *mut usize,
+    ) -> c_uint;
+
     pub fn ly_download_start(
         context: *mut LyContext,
         url: *const c_char,
         url_len: usize,
+        options_json: *const c_char,
+        options_len: usize,
         out: *mut *mut LyJob,
         error: *mut *mut LyError,
     ) -> c_uint;

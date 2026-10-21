@@ -14,12 +14,14 @@ struct BridgeResult {
     std::string json;
     ly_status status = LY_E_INTERNAL;
     std::string message;
+    std::string exception_class;
 };
 
 BridgeResult extract_json(const std::string& url, const std::string& options);
 BridgeResult download_json(
     const std::string& url,
-    const std::string& options,
+    const std::string& context_options,
+    const std::string& job_options,
     PyObject* events,
     PyObject* cancel_event
 );

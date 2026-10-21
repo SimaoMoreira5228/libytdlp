@@ -71,6 +71,8 @@ LY_API ly_status ly_download_start(
     ly_context* context,
     const char* url,
     size_t url_len,
+    const char* options_json,
+    size_t options_len,
     ly_job** out,
     ly_error** error
 ) LY_NOEXCEPT;
@@ -90,6 +92,8 @@ LY_API void ly_result_release(ly_result* result) LY_NOEXCEPT;
 
 LY_API ly_status ly_error_code(const ly_error* error) LY_NOEXCEPT;
 LY_API const char* ly_error_message(const ly_error* error) LY_NOEXCEPT;
+LY_API ly_status
+ly_error_details_json(const ly_error* error, const char** data, size_t* len) LY_NOEXCEPT;
 LY_API void ly_error_release(ly_error* error) LY_NOEXCEPT;
 
 #ifdef __cplusplus

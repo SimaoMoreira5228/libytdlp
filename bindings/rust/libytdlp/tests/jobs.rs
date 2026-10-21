@@ -109,13 +109,14 @@ fn bogus_url_job_fails_as_extract() {
     let client = Client::new("{}").expect("default options must be accepted");
 
     let job = client
-        .download("ly-bogus://no-such-scheme-xyz")
+        .download("ly-bogus://no-such-scheme-xyz", "{}")
         .expect("job must start");
 
     let error = job.wait().expect_err("bogus url must fail");
 
     assert_eq!(error.kind(), Kind::Extract);
     assert!(!error.message().is_empty());
+    assert!(error.exception_class().is_some());
 
     let error = job.wait().expect_err("wait must be idempotent");
 
@@ -136,7 +137,7 @@ fn slow_download_cancels() {
 
     let client = Client::new(&options).expect("options must be accepted");
     let job = client
-        .download(&server.url("/big.bin"))
+        .download(&server.url("/big.bin"), "{}")
         .expect("job must start");
 
     let state = wait_for_state(&job, JobState::Running, Duration::from_secs(10));
@@ -176,7 +177,7 @@ fn fast_download_completes() {
 
     let client = Client::new(&options).expect("options must be accepted");
     let job = client
-        .download(&server.url("/file.bin"))
+        .download(&server.url("/file.bin"), "{}")
         .expect("job must start");
 
     let info = job.wait().expect("fast download must succeed");
@@ -202,13 +203,65 @@ fn fast_download_completes() {
 }
 
 #[test]
+fn per_download_options_override_context() {
+    let server = FixtureServer::start(65536, 8_000_000);
+
+    let stem = format!("override-{}", std::process::id());
+    let dir_a = std::env::temp_dir().join(format!("libytdlp-jobtest-{stem}-ctx"));
+    let dir_b = std::env::temp_dir().join(format!("libytdlp-jobtest-{stem}-job"));
+
+    let _ = std::fs::remove_dir_all(&dir_a);
+    let _ = std::fs::remove_dir_all(&dir_b);
+    std::fs::create_dir_all(&dir_a).expect("context dir must be created");
+    std::fs::create_dir_all(&dir_b).expect("job dir must be created");
+
+    let context_options = format!(
+        "{{\"outtmpl\": \"{}\"}}",
+        dir_a
+            .join("ctx.bin")
+            .to_string_lossy()
+            .replace('\\', "\\\\")
+    );
+    let job_options = format!(
+        "{{\"outtmpl\": \"{}\"}}",
+        dir_b
+            .join("job.bin")
+            .to_string_lossy()
+            .replace('\\', "\\\\")
+    );
+
+    let client = Client::new(&context_options).expect("options must be accepted");
+    let job = client
+        .download(&server.url("/file.bin"), &job_options)
+        .expect("job must start");
+
+    let info = job.wait().expect("override download must succeed");
+
+    assert!(info.raw_json().len() > 100);
+
+    let bytes = std::fs::read(dir_b.join("job.bin")).expect("job output must exist");
+
+    assert_eq!(bytes.len(), 65536);
+
+    let mut leftovers = std::fs::read_dir(&dir_a).expect("context dir must be readable");
+
+    assert!(
+        leftovers.next().is_none(),
+        "context outtmpl must not be used"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir_a);
+    let _ = std::fs::remove_dir_all(&dir_b);
+}
+
+#[test]
 fn release_joins_running_job() {
     let server = FixtureServer::start(65536, 8_000_000);
     let (target, options) = temp_output("release");
 
     let client = Client::new(&options).expect("options must be accepted");
     let job = client
-        .download(&server.url("/file.bin"))
+        .download(&server.url("/file.bin"), "{}")
         .expect("job must start");
 
     drop(job);

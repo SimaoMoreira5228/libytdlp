@@ -12,6 +12,10 @@
 
 #include <dirent.h>
 
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+
 #include <libytdlp/libytdlp.h>
 
 static void check_null_handling(void) {
@@ -182,13 +186,19 @@ static void check_job_null_handling(void) {
 
     assert(ly_context_create(NULL, 0, &context, NULL) == LY_OK);
 
-    assert(ly_download_start(NULL, "x", 1, &job, NULL) == LY_E_INVALID_ARGUMENT);
-    assert(ly_download_start(context, NULL, 0, &job, NULL) == LY_E_INVALID_ARGUMENT);
-    assert(ly_download_start(context, "", 0, &job, NULL) == LY_E_INVALID_ARGUMENT);
-    assert(ly_download_start(context, "x", 1, NULL, NULL) == LY_E_INVALID_ARGUMENT);
-    assert(ly_download_start(context, "x", 1, NULL, &error) == LY_E_INVALID_ARGUMENT);
+    assert(ly_download_start(NULL, "x", 1, NULL, 0, &job, NULL) == LY_E_INVALID_ARGUMENT);
+    assert(ly_download_start(context, NULL, 0, NULL, 0, &job, NULL) == LY_E_INVALID_ARGUMENT);
+    assert(ly_download_start(context, "", 0, NULL, 0, &job, NULL) == LY_E_INVALID_ARGUMENT);
+    assert(ly_download_start(context, "x", 1, NULL, 0, NULL, NULL) == LY_E_INVALID_ARGUMENT);
+    assert(ly_download_start(context, "x", 1, NULL, 0, NULL, &error) == LY_E_INVALID_ARGUMENT);
     assert(error != NULL);
     ly_error_release(error);
+    assert(ly_download_start(context, "x", 1, NULL, 3, &job, NULL) == LY_E_INVALID_ARGUMENT);
+    assert(ly_download_start(context, "x", 1, "{}", 4, NULL, &error) == LY_E_INVALID_ARGUMENT);
+    assert(error != NULL);
+    ly_error_release(error);
+
+    assert(ly_error_details_json(NULL, NULL, NULL) == LY_E_INVALID_ARGUMENT);
 
     assert(ly_job_poll(NULL, &state, &events, NULL) == LY_E_INVALID_ARGUMENT);
     assert(ly_job_wait(NULL, &events, NULL) == LY_E_INVALID_ARGUMENT);
@@ -298,7 +308,7 @@ static void check_job_bogus_url(void) {
 
     ly_job* job = NULL;
     ly_error* error = NULL;
-    assert(ly_download_start(context, url, sizeof(url) - 1, &job, &error) == LY_OK);
+    assert(ly_download_start(context, url, sizeof(url) - 1, NULL, 0, &job, &error) == LY_OK);
     assert(job != NULL);
 
     ly_result* events = NULL;
@@ -325,6 +335,25 @@ static void check_job_bogus_url(void) {
     assert(error != NULL);
     assert(ly_error_code(error) == LY_E_EXTRACT);
     printf("bogus download -> code %d: %s\n", ly_error_code(error), ly_error_message(error));
+
+    const char* details = NULL;
+    size_t details_len = 0;
+    assert(ly_error_details_json(error, &details, &details_len) == LY_OK);
+    assert(details != NULL);
+    assert(details_len > 0);
+    assert(details[0] == '{');
+    assert(details[details_len - 1] == '}');
+    assert(ly_error_details_json(error, NULL, &details_len) == LY_E_INVALID_ARGUMENT);
+    assert(ly_error_details_json(error, &details, NULL) == LY_E_INVALID_ARGUMENT);
+    assert(ly_error_details_json(NULL, &details, &details_len) == LY_E_INVALID_ARGUMENT);
+
+    char want_code[32];
+    snprintf(want_code, sizeof(want_code), "\"code\":%d", ly_error_code(error));
+    assert(strstr(details, want_code) != NULL);
+    assert(strstr(details, "\"kind\":\"extract\"") != NULL);
+    assert(strstr(details, "\"class\":\"NoSupportingHandlers\"") != NULL);
+    assert(strstr(details, "\"message\":\"NoSupportingHandlers") != NULL);
+    printf("bogus download details -> %s\n", details);
     ly_error_release(error);
     error = NULL;
 
@@ -366,7 +395,7 @@ static void check_job_cancel(void) {
 
     ly_job* job = NULL;
     ly_error* error = NULL;
-    assert(ly_download_start(context, url, strlen(url), &job, &error) == LY_OK);
+    assert(ly_download_start(context, url, strlen(url), NULL, 0, &job, &error) == LY_OK);
     assert(job != NULL);
 
     ly_result* events = NULL;
@@ -445,7 +474,7 @@ static void check_job_download_success(void) {
 
     ly_job* job = NULL;
     ly_error* error = NULL;
-    assert(ly_download_start(context, url, strlen(url), &job, &error) == LY_OK);
+    assert(ly_download_start(context, url, strlen(url), NULL, 0, &job, &error) == LY_OK);
     assert(job != NULL);
 
     ly_result* out = NULL;
@@ -499,7 +528,7 @@ static void check_job_release_joins(void) {
     snprintf(url, sizeof(url), "http://127.0.0.1:%d/file.bin", port);
 
     ly_job* job = NULL;
-    assert(ly_download_start(context, url, strlen(url), &job, NULL) == LY_OK);
+    assert(ly_download_start(context, url, strlen(url), NULL, 0, &job, NULL) == LY_OK);
     assert(job != NULL);
 
     ly_job_release(job);
@@ -509,6 +538,212 @@ static void check_job_release_joins(void) {
     remove_tree(dir);
 
     stop_fixture(child);
+}
+
+static int dir_is_empty(const char* dir) {
+    DIR* listing = opendir(dir);
+    assert(listing != NULL);
+
+    int count = 0;
+    for (;;) {
+        struct dirent* entry = readdir(listing);
+        if (entry == NULL) {
+            break;
+        }
+
+        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
+            continue;
+        }
+        count++;
+    }
+
+    assert(closedir(listing) == 0);
+    return count == 0;
+}
+
+static void check_job_per_download_override(void) {
+    int port = 0;
+    pid_t child = spawn_fixture("65536", "8000000", &port);
+
+    char dir_a[256];
+    make_tmpdir(dir_a, sizeof(dir_a));
+
+    char dir_b[256];
+    make_tmpdir(dir_b, sizeof(dir_b));
+
+    char context_options[512];
+    snprintf(context_options, sizeof(context_options), "{\"outtmpl\": \"%s/ctx.bin\"}", dir_a);
+
+    char job_options[512];
+    snprintf(job_options, sizeof(job_options), "{\"outtmpl\": \"%s/job.bin\"}", dir_b);
+
+    ly_context* context = NULL;
+    assert(ly_context_create(context_options, strlen(context_options), &context, NULL) == LY_OK);
+
+    char url[128];
+    snprintf(url, sizeof(url), "http://127.0.0.1:%d/file.bin", port);
+
+    ly_job* job = NULL;
+    ly_error* error = NULL;
+    assert(
+        ly_download_start(
+            context,
+            url,
+            strlen(url),
+            job_options,
+            strlen(job_options),
+            &job,
+            &error
+        ) == LY_OK
+    );
+    assert(job != NULL);
+
+    ly_result* out = NULL;
+    assert(ly_job_wait(job, &out, &error) == LY_OK);
+    assert(out != NULL);
+    ly_result_release(out);
+
+    ly_job_release(job);
+    assert(ly_context_release(context) == LY_OK);
+
+    char target[300];
+    snprintf(target, sizeof(target), "%s/job.bin", dir_b);
+
+    FILE* probe = fopen(target, "rb");
+    assert(probe != NULL);
+    assert(fseek(probe, 0, SEEK_END) == 0);
+    assert(ftell(probe) == 65536);
+    assert(fclose(probe) == 0);
+
+    assert(dir_is_empty(dir_a));
+
+    remove_tree(dir_a);
+    remove_tree(dir_b);
+
+    stop_fixture(child);
+}
+
+static char* save_env(const char* name) {
+    const char* value = getenv(name);
+    if (value == NULL) {
+        return NULL;
+    }
+
+    size_t len = strlen(value) + 1;
+    char* copy = malloc(len);
+    assert(copy != NULL);
+    memcpy(copy, value, len);
+    return copy;
+}
+
+static int closed_loopback_port(void) {
+    int fd = socket(AF_INET, SOCK_STREAM, 0);
+    assert(fd >= 0);
+
+    struct sockaddr_in addr;
+    memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    addr.sin_port = htons(0);
+    assert(bind(fd, (struct sockaddr*)&addr, sizeof(addr)) == 0);
+
+    socklen_t len = sizeof(addr);
+    assert(getsockname(fd, (struct sockaddr*)&addr, &len) == 0);
+    int port = ntohs(addr.sin_port);
+    assert(port > 0);
+    assert(close(fd) == 0);
+    return port;
+}
+
+static void check_job_closed_port_network(void) {
+    static const char* scrub[] = {
+        "http_proxy",
+        "https_proxy",
+        "all_proxy",
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "ALL_PROXY",
+    };
+    char* saved[6];
+    for (size_t i = 0; i < 6; i++) {
+        saved[i] = save_env(scrub[i]);
+        unsetenv(scrub[i]);
+    }
+    char* saved_lower = save_env("no_proxy");
+    char* saved_upper = save_env("NO_PROXY");
+    setenv("no_proxy", "*", 1);
+    setenv("NO_PROXY", "*", 1);
+
+    int port = closed_loopback_port();
+
+    ly_context* context = NULL;
+    assert(ly_context_create(NULL, 0, &context, NULL) == LY_OK);
+
+    char url[64];
+    snprintf(url, sizeof(url), "http://127.0.0.1:%d/file.bin", port);
+
+    ly_job* job = NULL;
+    ly_error* error = NULL;
+    assert(ly_download_start(context, url, strlen(url), NULL, 0, &job, &error) == LY_OK);
+    assert(job != NULL);
+
+    ly_result* out = NULL;
+    ly_status status = ly_job_wait(job, &out, &error);
+    assert(status == LY_E_NETWORK);
+    assert(out == NULL);
+    assert(error != NULL);
+    assert(ly_error_code(error) == LY_E_NETWORK);
+
+    const char* details = NULL;
+    size_t details_len = 0;
+    assert(ly_error_details_json(error, &details, &details_len) == LY_OK);
+    assert(details != NULL);
+    assert(details_len > 0);
+
+    char want_code[32];
+    snprintf(want_code, sizeof(want_code), "\"code\":%d", LY_E_NETWORK);
+    assert(strstr(details, want_code) != NULL);
+    assert(strstr(details, "\"kind\":\"network\"") != NULL);
+    assert(strstr(details, "\"class\":\"DownloadError\"") != NULL);
+    printf("closed port -> code %d: %s\n", ly_error_code(error), ly_error_message(error));
+    printf("closed port details -> %s\n", details);
+    ly_error_release(error);
+    error = NULL;
+
+    status = ly_job_wait(job, &out, &error);
+    assert(status == LY_E_NETWORK);
+    assert(out == NULL);
+    ly_error_release(error);
+
+    ly_result* events = NULL;
+    ly_job_state state = LY_JOB_RUNNING;
+    assert(ly_job_poll(job, &state, &events, NULL) == LY_OK);
+    assert(state == LY_JOB_FAILED);
+    ly_result_release(events);
+
+    ly_job_release(job);
+    assert(ly_context_release(context) == LY_OK);
+
+    for (size_t i = 0; i < 6; i++) {
+        if (saved[i] == NULL) {
+            unsetenv(scrub[i]);
+        } else {
+            setenv(scrub[i], saved[i], 1);
+            free(saved[i]);
+        }
+    }
+    if (saved_lower == NULL) {
+        unsetenv("no_proxy");
+    } else {
+        setenv("no_proxy", saved_lower, 1);
+        free(saved_lower);
+    }
+    if (saved_upper == NULL) {
+        unsetenv("NO_PROXY");
+    } else {
+        setenv("NO_PROXY", saved_upper, 1);
+        free(saved_upper);
+    }
 }
 
 int main(void) {
@@ -546,6 +781,12 @@ int main(void) {
 
     check_job_download_success();
     printf("job download success ok\n");
+
+    check_job_per_download_override();
+    printf("job per-download override ok\n");
+
+    check_job_closed_port_network();
+    printf("job closed port network ok\n");
 
     check_job_release_joins();
     printf("job release joins ok\n");

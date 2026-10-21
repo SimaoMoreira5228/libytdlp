@@ -4,6 +4,7 @@
 #include <exception>
 #include <filesystem>
 #include <memory>
+#include <mutex>
 #include <new>
 #include <string>
 
@@ -25,6 +26,9 @@ struct LyResult {
 struct LyError {
     ly_status code = LY_E_INTERNAL;
     std::string message;
+    std::string exception_class;
+    mutable std::string cached_details;
+    mutable std::mutex details_mutex;
 };
 
 std::string installed_share_dir() {
@@ -99,10 +103,15 @@ std::string ytdlp_dir() {
 #endif
 }
 
-std::unique_ptr<LyError> make_error(ly_status code, const std::string& message) {
+std::unique_ptr<LyError> make_error(
+    ly_status code,
+    const std::string& message,
+    const std::string& exception_class = std::string()
+) {
     auto error = std::make_unique<LyError>();
     error->code = code;
     error->message = message;
+    error->exception_class = exception_class;
     return error;
 }
 
@@ -149,6 +158,55 @@ bool ensure_runtime(ly_error** error) {
 
     store_error(error, make_error(LY_E_RUNTIME, message));
     return false;
+}
+
+const char* status_kind(ly_status status) {
+    switch (status) {
+    case LY_OK:
+        return "ok";
+    case LY_E_INVALID_ARGUMENT:
+        return "invalid_argument";
+    case LY_E_RUNTIME:
+        return "runtime";
+    case LY_E_EXTRACT:
+        return "extract";
+    case LY_E_NETWORK:
+        return "network";
+    case LY_E_CANCELLED:
+        return "cancelled";
+    case LY_E_BUSY:
+        return "busy";
+    case LY_E_INTERNAL:
+        return "internal";
+    }
+
+    return "internal";
+}
+
+void append_escaped(std::string& out, const std::string& text) {
+    static const char* kHex = "0123456789abcdef";
+    out += '"';
+
+    for (char step : text) {
+        unsigned char c = static_cast<unsigned char>(step);
+
+        if (c == '"' || c == '\\') {
+            out += '\\';
+            out += static_cast<char>(c);
+            continue;
+        }
+
+        if (c < 0x20) {
+            out += "\\u00";
+            out += kHex[c >> 4];
+            out += kHex[c & 0x0F];
+            continue;
+        }
+
+        out += static_cast<char>(c);
+    }
+
+    out += '"';
 }
 
 } // namespace
@@ -241,7 +299,7 @@ ly_status ly_extract(
 
         libytdlp::BridgeResult called = libytdlp::extract_json(url_text, options);
         if (!called.ok) {
-            store_error(error, make_error(called.status, called.message));
+            store_error(error, make_error(called.status, called.message, called.exception_class));
             return called.status;
         }
 
@@ -277,7 +335,7 @@ ly_status ly_version_info(ly_result** out, ly_error** error) noexcept {
 
         libytdlp::BridgeResult called = libytdlp::runtime_info_json();
         if (!called.ok) {
-            store_error(error, make_error(called.status, called.message));
+            store_error(error, make_error(called.status, called.message, called.exception_class));
             return called.status;
         }
 
@@ -314,6 +372,8 @@ ly_status ly_download_start(
     ly_context* context,
     const char* url,
     size_t url_len,
+    const char* options_json,
+    size_t options_len,
     ly_job** out,
     ly_error** error
 ) noexcept {
@@ -338,16 +398,30 @@ ly_status ly_download_start(
             return LY_E_INVALID_ARGUMENT;
         }
 
+        if (options_json == nullptr && options_len != 0) {
+            store_error(error, make_error(LY_E_INVALID_ARGUMENT, "options length needs a buffer"));
+            return LY_E_INVALID_ARGUMENT;
+        }
+
         if (!ensure_runtime(error)) {
             return LY_E_RUNTIME;
         }
 
         std::string url_text(url, url_len);
         std::string options = reinterpret_cast<LyContext*>(context)->options;
+        std::string job_options = "{}";
+
+        if (options_json != nullptr && options_len != 0) {
+            job_options.assign(options_json, options_len);
+        }
 
         std::string failure;
-        libytdlp::DownloadJob* job =
-            libytdlp::DownloadJob::create(std::move(url_text), std::move(options), failure);
+        libytdlp::DownloadJob* job = libytdlp::DownloadJob::create(
+            std::move(url_text),
+            std::move(options),
+            std::move(job_options),
+            failure
+        );
         if (job == nullptr) {
             store_error(error, make_error(LY_E_RUNTIME, failure));
             return LY_E_RUNTIME;
@@ -425,10 +499,11 @@ ly_status ly_job_wait(ly_job* job, ly_result** out, ly_error** error) noexcept {
         std::string json;
         ly_status status = LY_OK;
         std::string message;
-        reinterpret_cast<libytdlp::DownloadJob*>(job)->wait(json, status, message);
+        std::string exception_class;
+        reinterpret_cast<libytdlp::DownloadJob*>(job)->wait(json, status, message, exception_class);
 
         if (status != LY_OK) {
-            store_error(error, make_error(status, message));
+            store_error(error, make_error(status, message, exception_class));
             return status;
         }
 
@@ -481,4 +556,38 @@ const char* ly_error_message(const ly_error* error) noexcept {
 
 void ly_error_release(ly_error* error) noexcept {
     delete reinterpret_cast<LyError*>(error);
+}
+
+ly_status ly_error_details_json(const ly_error* error, const char** data, size_t* len) noexcept {
+    try {
+        if (error == nullptr || data == nullptr || len == nullptr) {
+            return LY_E_INVALID_ARGUMENT;
+        }
+
+        const LyError* owned = reinterpret_cast<const LyError*>(error);
+        std::lock_guard<std::mutex> details_lock(owned->details_mutex);
+        std::string json = "{\"code\":";
+
+        json += std::to_string(static_cast<unsigned int>(owned->code));
+        json += ",\"kind\":\"";
+        json += status_kind(owned->code);
+        json += "\",\"class\":";
+
+        if (owned->exception_class.empty()) {
+            json += "null";
+        } else {
+            append_escaped(json, owned->exception_class);
+        }
+
+        json += ",\"message\":";
+        append_escaped(json, owned->message);
+        json += "}";
+
+        owned->cached_details = std::move(json);
+        *data = owned->cached_details.data();
+        *len = owned->cached_details.size();
+        return LY_OK;
+    } catch (...) {
+        return LY_E_INTERNAL;
+    }
 }

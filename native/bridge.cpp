@@ -3,6 +3,8 @@
 #include <Python.h>
 
 #include <mutex>
+#include <string>
+#include <vector>
 
 #include "py_handle.hpp"
 #include "runtime.hpp"
@@ -10,21 +12,88 @@
 namespace libytdlp {
 namespace {
 
-ly_status map_exception(const std::string& name) {
-    if (name == "_Cancelled") {
+const char* kNetworkClasses[] = {
+    "URLError",
+    "HTTPError",
+    "SSLError",
+    "SSLZeroReturnError",
+    "SSLCertVerificationError",
+    "SSLEOFError",
+    "ConnectionError",
+    "ConnectionRefusedError",
+    "ConnectionResetError",
+    "ConnectionAbortedError",
+    "BrokenPipeError",
+    "TimeoutError",
+    "gaierror",
+    "HTTPException",
+    "RemoteDisconnected",
+    "IncompleteRead",
+    "BadStatusLine",
+    "ReadTimeoutError",
+    "ConnectTimeoutError",
+    "NewConnectionError",
+    "MaxRetryError",
+    "NameResolutionError",
+    "ProxyError",
+    "CurlError",
+};
+
+bool is_network_class(const std::string& name) {
+    for (const char* candidate : kNetworkClasses) {
+        if (name == candidate) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+std::string class_name_of_type(PyObject* type) {
+    OwnedPyRef name_attr(PyObject_GetAttrString(type, "__name__"));
+
+    if (!name_attr) {
+        PyErr_Clear();
+        return "PythonError";
+    }
+
+    const char* text = PyUnicode_AsUTF8(name_attr.get());
+
+    if (text == nullptr) {
+        PyErr_Clear();
+        return "PythonError";
+    }
+
+    return text;
+}
+
+ly_status map_chain(const std::vector<std::string>& names) {
+    if (names.empty()) {
+        return LY_E_RUNTIME;
+    }
+
+    const std::string& top = names.front();
+
+    if (top == "_Cancelled") {
         return LY_E_CANCELLED;
     }
 
-    if (name == "ValueError" || name == "TypeError" || name == "JSONDecodeError") {
+    for (const std::string& name : names) {
+        if (is_network_class(name)) {
+            return LY_E_NETWORK;
+        }
+    }
+
+    if (top == "ValueError" || top == "TypeError" || top == "JSONDecodeError") {
         return LY_E_INVALID_ARGUMENT;
     }
 
-    if (name == "UnsupportedError" || name == "NoSupportingHandlers" || name == "ExtractorError" ||
-        name == "DownloadError") {
+    if (top == "UnsupportedError" || top == "NoSupportingHandlers" || top == "ExtractorError" ||
+        top == "DownloadError") {
         return LY_E_EXTRACT;
     }
 
-    if (name == "ImportError" || name == "AttributeError") {
+    if (top == "ImportError" || top == "AttributeError") {
         return LY_E_RUNTIME;
     }
 
@@ -70,9 +139,51 @@ void capture_failure(BridgeResult& out) {
             }
         }
     }
+
+    std::vector<std::string> chain;
+    chain.push_back(name);
+
+    if (value) {
+        OwnedPyRef anchor;
+        PyObject* current = value.get();
+
+        for (int depth = 0; depth < 8 && current != nullptr; ++depth) {
+            OwnedPyRef cause(PyObject_GetAttrString(current, "__cause__"));
+
+            if (!cause) {
+                PyErr_Clear();
+            }
+
+            OwnedPyRef next;
+
+            if (cause && cause.get() != Py_None) {
+                next = std::move(cause);
+            } else {
+                OwnedPyRef context(PyObject_GetAttrString(current, "__context__"));
+
+                if (!context) {
+                    PyErr_Clear();
+                } else if (context.get() != Py_None) {
+                    next = std::move(context);
+                }
+            }
+
+            if (!next) {
+                break;
+            }
+
+            PyObject* next_type = reinterpret_cast<PyObject*>(Py_TYPE(next.get()));
+            chain.push_back(class_name_of_type(next_type));
+
+            anchor = std::move(next);
+            current = anchor.get();
+        }
+    }
+
     PyErr_Clear();
 
-    out.status = map_exception(name);
+    out.status = map_chain(chain);
+    out.exception_class = name;
     out.message = name;
     if (!detail.empty()) {
         out.message += ": ";
@@ -145,14 +256,16 @@ BridgeResult call_bridge(const std::string& url, const std::string& options) {
 
 BridgeResult call_download(
     const std::string& url,
-    const std::string& options,
+    const std::string& context_options,
+    const std::string& job_options,
     PyObject* events,
     PyObject* cancel_event
 ) {
     BridgeResult out;
 
     if (url.size() > static_cast<size_t>(PY_SSIZE_T_MAX) ||
-        options.size() > static_cast<size_t>(PY_SSIZE_T_MAX)) {
+        context_options.size() > static_cast<size_t>(PY_SSIZE_T_MAX) ||
+        job_options.size() > static_cast<size_t>(PY_SSIZE_T_MAX)) {
         out.status = LY_E_INVALID_ARGUMENT;
         out.message = "input too large";
         return out;
@@ -181,10 +294,14 @@ BridgeResult call_download(
     OwnedPyRef url_obj(
         PyUnicode_FromStringAndSize(url.data(), static_cast<Py_ssize_t>(url.size()))
     );
-    OwnedPyRef options_obj(
-        PyUnicode_FromStringAndSize(options.data(), static_cast<Py_ssize_t>(options.size()))
+    OwnedPyRef context_obj(PyUnicode_FromStringAndSize(
+        context_options.data(),
+        static_cast<Py_ssize_t>(context_options.size())
+    ));
+    OwnedPyRef job_obj(
+        PyUnicode_FromStringAndSize(job_options.data(), static_cast<Py_ssize_t>(job_options.size()))
     );
-    if (!url_obj || !options_obj) {
+    if (!url_obj || !context_obj || !job_obj) {
         PyErr_Clear();
         out.message = "could not encode call arguments";
         return out;
@@ -193,7 +310,8 @@ BridgeResult call_download(
     OwnedPyRef result(PyObject_CallFunctionObjArgs(
         function.get(),
         url_obj.get(),
-        options_obj.get(),
+        context_obj.get(),
+        job_obj.get(),
         events,
         cancel_event,
         nullptr
@@ -309,11 +427,12 @@ BridgeResult extract_json(const std::string& url, const std::string& options) {
 
 BridgeResult download_json(
     const std::string& url,
-    const std::string& options,
+    const std::string& context_options,
+    const std::string& job_options,
     PyObject* events,
     PyObject* cancel_event
 ) {
-    return call_download(url, options, events, cancel_event);
+    return call_download(url, context_options, job_options, events, cancel_event);
 }
 
 BridgeResult runtime_info_json() {

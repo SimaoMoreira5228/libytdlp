@@ -99,6 +99,38 @@ def check_extractor_args_passthrough():
     print("extractor args passthrough ok")
 
 
+def check_merge_options():
+    from libytdlp_bridge.download import _merge_options
+
+    assert _merge_options("{}", "{}") == {}
+    assert _merge_options("", "") == {}
+    assert _merge_options("", "{}") == {}
+    assert _merge_options("{}", "") == {}
+
+    merged = _merge_options('{"a": 1, "b": 2}', '{"b": 3, "c": 4}')
+    assert merged == {"a": 1, "b": 3, "c": 4}, merged
+
+    assert _merge_options('{"a": 1}', "") == {"a": 1}
+
+    for context_options, job_options in [
+        ("[1, 2]", "{}"),
+        ("{}", "[1, 2]"),
+        ("42", "{}"),
+        ("{}", "null"),
+        ('"x"', "{}"),
+    ]:
+        try:
+            _merge_options(context_options, job_options)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError(
+                f"non-object options were accepted: {context_options!r} {job_options!r}"
+            )
+
+    print("merge options ok")
+
+
 if __name__ == "__main__":
     check_versions()
     check_dumps_round_trip()
@@ -106,6 +138,7 @@ if __name__ == "__main__":
     check_rejects_non_object_options()
     check_cachedir_defaults_off()
     check_extractor_args_passthrough()
+    check_merge_options()
     check_runtime_info()
     check_unsupported_url()
     print("bridge ok")
