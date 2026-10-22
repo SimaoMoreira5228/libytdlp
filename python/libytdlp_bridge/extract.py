@@ -8,7 +8,7 @@ from yt_dlp import YoutubeDL
 from .options import merge_options
 from .serialize import dumps
 
-BRIDGE_VERSION = "0.4.0"
+BRIDGE_VERSION = "0.5.0"
 
 
 class _SilentLogger:
