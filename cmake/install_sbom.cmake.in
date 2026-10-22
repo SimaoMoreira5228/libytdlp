@@ -2,6 +2,11 @@ set(LIBYTDLP_SBOM_SOURCE_DIR "@CMAKE_CURRENT_SOURCE_DIR@")
 set(LIBYTDLP_SBOM_PYTHON "@Python_EXECUTABLE@")
 set(LIBYTDLP_SBOM_RELPATH "@CMAKE_INSTALL_DATADIR@/libytdlp/sbom.json")
 
+if(NOT EXISTS "${LIBYTDLP_SBOM_SOURCE_DIR}/tools/sbom.py")
+    message(STATUS "libytdlp sbom: no tools/sbom.py in the source tree, skipping")
+    return()
+endif()
+
 set(LIBYTDLP_SBOM_PREFIX "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}")
 set(LIBYTDLP_SBOM_OUT "${LIBYTDLP_SBOM_PREFIX}/${LIBYTDLP_SBOM_RELPATH}")
 

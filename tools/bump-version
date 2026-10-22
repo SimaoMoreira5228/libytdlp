@@ -104,7 +104,7 @@ def first_version_line(path):
 
 def check_cargo(expected):
     crates = [
-        "bindings/rust/libytdlp-sys/Cargo.toml",
+        "Cargo.toml",
         "bindings/rust/libytdlp/Cargo.toml",
         "examples/resolve/Cargo.toml",
     ]
@@ -217,7 +217,7 @@ def run_bump(new):
     version_pattern = r'^version = "[^"]*"'
     replacement = f'version = "{new}"'
 
-    for crate in ("bindings/rust/libytdlp-sys/Cargo.toml",
+    for crate in ("Cargo.toml",
                   "bindings/rust/libytdlp/Cargo.toml",
                   "examples/resolve/Cargo.toml",
                   "pyproject.toml"):
@@ -235,7 +235,7 @@ def run_bump(new):
     )
     rewrite_uv_lock(new)
 
-    subprocess.run(["cargo", "check"], cwd=ROOT / "bindings" / "rust", check=True)
+    subprocess.run(["cargo", "check"], cwd=ROOT, check=True)
     subprocess.run(["cargo", "check"], cwd=ROOT / "examples" / "resolve", check=True)
 
     sys.exit(run_check())

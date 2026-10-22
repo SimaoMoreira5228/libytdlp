@@ -10,7 +10,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 RUST_WORKSPACES = (
-    ("bindings/rust", "bindings/rust/Cargo.toml"),
+    (".", "Cargo.toml"),
     ("examples/resolve", "examples/resolve/Cargo.toml"),
 )
 YTDLP_REPO = "https://github.com/yt-dlp/yt-dlp"

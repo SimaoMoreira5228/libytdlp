@@ -10,3 +10,4 @@ examples/resolve/target/
 *.dylib
 *.dll
 compile_commands.json
+/target/

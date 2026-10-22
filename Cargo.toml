@@ -1,0 +1,45 @@
+[package]
+name = "libytdlp-sys"
+version = "0.4.0"
+edition = "2024"
+rust-version = "1.85"
+license = "Apache-2.0"
+description = "Raw FFI bindings to the libytdlp C ABI"
+repository = "https://github.com/SimaoMoreira5228/libytdlp"
+links = "ytdlp"
+autoexamples = false
+build = "bindings/rust/libytdlp-sys/build.rs"
+include = [
+    "native/**/*",
+    "include/**/*",
+    "python/**/*",
+    "tests/**/*",
+    "third_party/yt-dlp/yt_dlp/**/*",
+    "third_party/yt-dlp/LICENSE",
+    "third_party/yt-dlp/THIRD_PARTY_LICENSES.txt",
+    "/CMakeLists.txt",
+    "/VERSION",
+    "cmake/install_sbom.cmake.in",
+    "bindings/rust/libytdlp-sys/build.rs",
+    "bindings/rust/libytdlp-sys/src/lib.rs",
+    "/LICENSE",
+    "/NOTICE",
+    "/THIRD_PARTY_NOTICES.md",
+]
+exclude = [
+    "/Cargo.lock",
+    "**/__pycache__/**",
+    "**/*.pyc",
+]
+
+[lib]
+path = "bindings/rust/libytdlp-sys/src/lib.rs"
+
+[build-dependencies]
+cmake = "0.1"
+
+[workspace]
+resolver = "3"
+members = [".", "bindings/rust/libytdlp"]
+default-members = [".", "bindings/rust/libytdlp"]
+exclude = ["examples/resolve"]

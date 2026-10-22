@@ -6,6 +6,8 @@ rust-version = "1.85"
 license = "Apache-2.0"
 description = "Pick the best audio-only stream for a URL using libytdlp"
 
+[workspace]
+
 [[bin]]
 name = "resolve"
 path = "src/main.rs"

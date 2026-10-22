@@ -208,16 +208,14 @@ bindings/rust/      `libytdlp-sys` (raw FFI) and `libytdlp` (safe wrapper).
 
 Two crates live in `bindings/rust`. `libytdlp-sys` is the raw FFI. `libytdlp` is the wrapper you actually want.
 
-Build the native library first. Cargo doesn't do that part.
+Cargo builds the native library itself on first use. No manual CMake step, no exports:
 
 ```bash
-cmake -S . -B build
-cmake --build build
 cd bindings/rust
 cargo test
 ```
 
-Cargo finds `<repo>/build` by itself, no exports needed. `LIBYTDLP_LIB_DIR` overrides that when your build directory lives elsewhere, and fails loudly if it holds no built library. If the directory holds `libytdlp.a`, your binary absorbs it statically and you ship one file. Only `libpython` and `libstdc++` stay dynamic, and the build script finds both itself. No `build.rs` needed on your side.
+The build script picks a fresh `<repo>/build` when one exists, otherwise it configures and builds the static library from the bundled sources (needs `cmake`, a C++23 compiler, and Python development headers). `LIBYTDLP_LIB_DIR` overrides that when your build directory lives elsewhere, and fails loudly if it holds no built library. If the directory holds `libytdlp.a`, your binary absorbs it statically and you ship one file. Only `libpython` and `libstdc++` stay dynamic, and the build script finds both itself. No `build.rs` needed on your side.
 
 `LIBYTDLP_LINK=shared` forces the `.so` instead, for when you want one shared copy across processes. Then the loader has to find it: install system-wide or bake an rpath yourself. `LIBYTDLP_LINK=static` fails loudly if no archive is around. `LIBYTDLP_PYTHON` picks the interpreter used for Python linkage, default `python3`. Leave `LIBYTDLP_LIB_DIR` unset and the build script checks your repo `build/` directory first, then a system-wide install.
 

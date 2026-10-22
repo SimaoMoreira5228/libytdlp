@@ -69,28 +69,115 @@ fn dir_has_lib(dir: &std::path::Path) -> bool {
     names.iter().any(|name| dir.join(name).exists())
 }
 
-fn dev_tree_dir() -> Option<PathBuf> {
+fn repo_root() -> Option<PathBuf> {
+    let manifest = PathBuf::from(env::var("CARGO_MANIFEST_DIR").ok()?);
+
+    if manifest.join("CMakeLists.txt").is_file() && manifest.join("native").is_dir() {
+        Some(manifest)
+    } else {
+        None
+    }
+}
+
+fn collect_sources(dir: &std::path::Path, out: &mut Vec<PathBuf>) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+
+        if path.is_dir() {
+            collect_sources(&path, out);
+        } else {
+            out.push(path);
+        }
+    }
+}
+
+fn native_sources(root: &std::path::Path) -> Vec<PathBuf> {
+    let mut sources = vec![root.join("CMakeLists.txt")];
+
+    collect_sources(&root.join("native"), &mut sources);
+    collect_sources(&root.join("include"), &mut sources);
+
+    for source in &sources {
+        println!("cargo:rerun-if-changed={}", source.display());
+    }
+
+    sources
+}
+
+fn mtime(path: &std::path::Path) -> Option<std::time::SystemTime> {
+    std::fs::metadata(path)
+        .and_then(|meta| meta.modified())
+        .ok()
+}
+
+fn archive_in(dir: &std::path::Path, static_name: &str) -> Option<PathBuf> {
+    [dir.to_path_buf(), dir.join("Release"), dir.join("Debug")]
+        .into_iter()
+        .map(|dir| dir.join(static_name))
+        .find(|archive| archive.is_file())
+}
+
+fn fresh_repo_build(root: &std::path::Path, static_name: &str) -> Option<PathBuf> {
+    let mut candidates = Vec::new();
+
     if let Some(dir) = env::var_os("BUILD_DIR") {
-        let dir = PathBuf::from(dir);
-
-        if dir_has_lib(&dir) {
-            return Some(dir);
-        }
+        candidates.push(PathBuf::from(dir));
     }
 
-    if let Ok(manifest) = env::var("CARGO_MANIFEST_DIR") {
-        let dir = PathBuf::from(manifest)
-            .ancestors()
-            .nth(3)
-            .map(|root| root.join("build"))
-            .filter(|dir| dir_has_lib(dir));
+    candidates.push(root.join("build"));
 
-        if dir.is_some() {
-            return dir;
-        }
+    let newest_source = native_sources(root)
+        .iter()
+        .filter_map(|source| mtime(source))
+        .max()?;
+
+    candidates.into_iter().find_map(|dir| {
+        let archive = archive_in(&dir, static_name)?;
+
+        let fresh = mtime(&archive).is_some_and(|built| built >= newest_source);
+
+        fresh.then(|| {
+            archive
+                .parent()
+                .expect("archive has a parent")
+                .to_path_buf()
+        })
+    })
+}
+
+fn cmake_build(root: &std::path::Path) -> PathBuf {
+    println!(
+        "cargo:warning=libytdlp: no fresh prebuilt library found, building the native library from {} (needs cmake, a C++23 compiler and Python development headers)",
+        root.display()
+    );
+
+    let release = env::var("OPT_LEVEL").as_deref() != Ok("0");
+
+    let mut config = cmake::Config::new(root);
+    config.define("LIBYTDLP_BUILD_RUST", "OFF");
+
+    if release {
+        config.profile("Release");
+    } else {
+        config.profile("Debug");
     }
 
-    None
+    let prefix = config.build();
+
+    ["lib", "lib64"]
+        .into_iter()
+        .map(|suffix| prefix.join(suffix))
+        .find(|dir| dir_has_lib(dir))
+        .unwrap_or_else(|| {
+            panic!(
+                "cmake build succeeded but no library landed in {}",
+                prefix.display()
+            )
+        })
 }
 fn system_lib_dir() -> Option<PathBuf> {
     if env::var("CARGO_CFG_WINDOWS").is_ok() {
@@ -148,16 +235,21 @@ fn main() {
             "LIBYTDLP_LIB_DIR holds {} but no built library is in it",
             dir.display()
         ),
-        None => dev_tree_dir().or_else(system_lib_dir),
+        None => match repo_root() {
+            Some(root) => {
+                Some(fresh_repo_build(&root, static_name).unwrap_or_else(|| cmake_build(&root)))
+            }
+            None => system_lib_dir(),
+        },
     };
 
     let Some(dir) = dir else {
         panic!(
-            "libytdlp native library not found: build the repo first (cargo finds \
-             <root>/build by itself) or install it system-wide (/usr/lib, /usr/lib64, \
-             /usr/local/lib, /usr/local/lib64), or set LIBYTDLP_LIB_DIR to the \
-             directory holding libytdlp.so, libytdlp.a \
-             (ytdlp.lib or ytdlp_static.lib on Windows)"
+            "libytdlp native library not found: building from a source checkout needs \
+             the repo layout (this copy has no CMakeLists.txt beside it), otherwise \
+             install the library system-wide (/usr/lib, /usr/lib64, /usr/local/lib, \
+             /usr/local/lib64) or set LIBYTDLP_LIB_DIR to the directory holding \
+             libytdlp.so, libytdlp.a (ytdlp.lib or ytdlp_static.lib on Windows)"
         );
     };
 
