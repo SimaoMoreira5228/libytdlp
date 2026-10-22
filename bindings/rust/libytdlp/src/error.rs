@@ -85,12 +85,6 @@ impl Error {
         self
     }
 
-    pub(crate) fn with_retryable(mut self, retryable: bool) -> Self {
-        self.retryable = retryable;
-
-        self
-    }
-
     fn read_exception_class(error: *mut sys::LyError) -> Option<String> {
         let mut data: *const std::ffi::c_char = ptr::null();
         let mut len: usize = 0;

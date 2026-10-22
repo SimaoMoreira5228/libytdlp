@@ -114,14 +114,6 @@ Cancel with `ly_job_cancel`. It's a suggestion, not a kill switch: yt-dlp only n
 
 Where files land is your call. Pass `outtmpl` (and `paths`, `format`, whatever else) through the context options and yt-dlp does the rest. The library doesn't fence you into a directory in M3, so pick templates that stay where you expect. Same goes for FFmpeg: still external, still found on `PATH` unless you point elsewhere. Downloads that need postprocessing fail without it.
 
-## Experimental process backend
-
-The Rust bindings also ship a prototype that downloads through a real `yt-dlp` child process instead of the embedded interpreter: `ProcessClient` and `ProcessDownloadJob` in `libytdlp::process`. Same shape as the native jobs (`download`, `poll`, `wait`, `cancel`), different stop: cancel kills the whole process tree, so a stalled transfer dies in milliseconds.
-
-It finds `yt-dlp` on `PATH`, or you hand it an exact binary. Only `outtmpl` (literal paths, no template fields) and `proxy` options exist. Failures map to the usual `Kind` values. Timeouts cover the whole wait.
-
-This is research, not a second API. It exists to test whether a killable subprocess backend belongs behind the C ABI later. Expect it to move or disappear.
-
 ## Checks
 
 `./dev test` runs everything offline. UBSan is clean. AddressSanitizer trips over a system crypto library yt-dlp pulls in, that's their `dlopen` flags fighting the sanitizer, not our code. So CI runs UBSan only.
