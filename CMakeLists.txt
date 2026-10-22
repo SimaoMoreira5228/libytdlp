@@ -143,6 +143,12 @@ if(NOT WIN32)
     find_package(Threads REQUIRED)
     target_link_libraries(ytdlp PRIVATE Threads::Threads)
     target_link_libraries(ytdlp_static PUBLIC Threads::Threads)
+
+    if(APPLE)
+        target_link_libraries(ytdlp_static PUBLIC c++)
+    else()
+        target_link_libraries(ytdlp_static PUBLIC stdc++)
+    endif()
 endif()
 
 option(LIBYTDLP_BUILD_RUST "Build Rust bindings via Corrosion" OFF)
@@ -210,6 +216,22 @@ install(
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/libytdlp
 )
 
+install(
+    FILES
+        "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE"
+        "${CMAKE_CURRENT_SOURCE_DIR}/NOTICE"
+        "${CMAKE_CURRENT_SOURCE_DIR}/THIRD_PARTY_NOTICES.md"
+    DESTINATION ${CMAKE_INSTALL_DOCDIR}
+)
+
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/cmake/install_sbom.cmake.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/generated/install_sbom.cmake"
+    @ONLY
+)
+
+install(SCRIPT "${CMAKE_CURRENT_BINARY_DIR}/generated/install_sbom.cmake")
+
 if(BUILD_TESTING)
     find_program(UV_EXECUTABLE NAMES uv REQUIRED)
 
@@ -272,6 +294,14 @@ if(BUILD_TESTING)
                 $<$<CONFIG:Release,RelWithDebInfo,MinSizeRel>:/UNDEBUG>
             )
         endforeach()
+    else()
+        # NOTE: Same NDEBUG problem as MSVC above: Release-type configs pass
+        # -DNDEBUG, which would drop the assert() calls the tests rely on.
+        foreach(target ly_smoke ly_jobs)
+            target_compile_options(${target} PRIVATE
+                $<$<CONFIG:Release,RelWithDebInfo,MinSizeRel>:-UNDEBUG>
+            )
+        endforeach()
     endif()
 
     add_test(NAME smoke COMMAND ly_smoke)
@@ -303,6 +333,8 @@ if(BUILD_TESTING)
         list(APPEND LIBYTDLP_TEST_PYTHON_INCLUDES "-I${dir}")
     endforeach()
 
+    get_filename_component(LIBYTDLP_PYTHON_LIBDIR "${Python_LIBRARIES}" DIRECTORY)
+
     if(NOT WIN32)
         add_test(NAME install-tree
             COMMAND ${CMAKE_COMMAND}
@@ -317,6 +349,8 @@ if(BUILD_TESTING)
                 -DLIBYTDLP_YTDLP_DIR=${CMAKE_CURRENT_SOURCE_DIR}/third_party/yt-dlp
                 "-DLIBYTDLP_PYTHON_INCLUDES=${LIBYTDLP_TEST_PYTHON_INCLUDES}"
                 "-DLIBYTDLP_PYTHON_LIB=${Python_LIBRARIES}"
+                -DLIBYTDLP_PYTHON_LIBDIR=${LIBYTDLP_PYTHON_LIBDIR}
+                -DLIBYTDLP_PROJECT_VERSION=${PROJECT_VERSION}
                 -DLIBYTDLP_WORK_DIR=${LIBYTDLP_INSTALL_VERIFY_WORK}
                 -DLIBYTDLP_BUILD_CONFIG=$<CONFIG>
                 -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/install_verify.cmake

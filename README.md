@@ -128,6 +128,57 @@ Set it at configure time: `cmake -DLIBYTDLP_DEPLOYMENT_PROFILE=BUNDLED_YTDLP_SYS
 
 FFmpeg is never bundled. yt-dlp finds `ffmpeg` on `PATH` like always, or you hand a location to one context through the normal options. A missing FFmpeg only breaks the operations that need it. Nothing else.
 
+## Install it once
+
+Build-tree paths and `LIBYTDLP_LIB_DIR` are for development. To use the library from another project, install it:
+
+```bash
+cmake -S . -B build
+cmake --build build
+cmake --install build --prefix /usr/local
+```
+
+That prefix then holds everything a consumer needs: headers, the shared and static libraries, a versioned CMake package, the Python bridge, the pinned yt-dlp sources, the SBOM, and the license notices. The installed library finds its bridge and yt-dlp next to itself, so `LIBYTDLP_BRIDGE_DIR` and `LIBYTDLP_YTDLP_DIR` stay unset. Move the whole prefix somewhere else and it still works, it resolves everything relative to the loaded library.
+
+Under the prefix:
+
+```
+include/libytdlp/          the C ABI headers
+lib|lib64/libytdlp.so*     shared library
+lib|lib64/libytdlp.a       static archive
+lib|lib64/cmake/libytdlp/  find_package config, versioned
+share/libytdlp/python/     the bridge, used automatically
+share/libytdlp/yt-dlp/     pinned yt-dlp sources, used automatically
+share/libytdlp/sbom.json   generated at install time from pinned sources
+share/doc/libytdlp/        LICENSE, NOTICE, THIRD_PARTY_NOTICES.md
+```
+
+No FFmpeg in there, ever. Every profile uses an external executable.
+
+### From C or C++
+
+```cmake
+find_package(libytdlp REQUIRED)
+target_link_libraries(myapp PRIVATE libytdlp::ytdlp)
+```
+
+Pass `-DCMAKE_PREFIX_PATH=/your/prefix` at configure time when the install isn't on a system path. `libytdlp::ytdlp` is the shared library, `libytdlp::ytdlp_static` is the static one. Both are installed, and the static target carries its Threads, Python, and C++ runtime linkage with it, so plain C projects link it without extra flags.
+
+### From Rust
+
+Install the library somewhere system-wide (`/usr/local` works, verified end to end) and depend on `libytdlp` like any other crate. No `LIBYTDLP_LIB_DIR`, no `build.rs` on your side. `libytdlp-sys` looks in `/usr/lib`, `/usr/lib64`, `/usr/local/lib`, and `/usr/local/lib64` by itself, and only asks for `LIBYTDLP_LIB_DIR` when nothing is installed. Static linking wins when `libytdlp.a` is there. `LIBYTDLP_LINK=shared` switches to the `.so`, and then the loader has to find it like any shared library.
+
+### After changing native code
+
+Rebuild, reinstall to the same prefix, rebuild the consumer. No reconfigure unless CMake options changed:
+
+```bash
+cmake --build build
+cmake --install build --prefix /usr/local
+```
+
+Static consumers absorb the archive, so `cargo build` relinks on the next run (the `sys` build script watches the installed archive). Shared consumers pick the new library up at process start.
+
 ## Layout
 
 ```
