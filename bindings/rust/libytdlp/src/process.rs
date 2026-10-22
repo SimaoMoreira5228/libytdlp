@@ -118,8 +118,14 @@ impl ProcessClient {
         let stderr = child.stderr.take().expect("stderr was piped");
 
         let events = Arc::new(Mutex::new(Vec::new()));
+        let stderr_bytes = Arc::new(Mutex::new(Vec::new()));
 
-        let (stdout_pump, stderr_pump) = spawn_pumps(stdout, stderr, Arc::clone(&events));
+        let (stdout_pump, stderr_pump) = spawn_pumps(
+            stdout,
+            stderr,
+            Arc::clone(&events),
+            Arc::clone(&stderr_bytes),
+        );
 
         let deadline = self.timeout.map(|window| Instant::now() + window);
 
@@ -127,6 +133,7 @@ impl ProcessClient {
             child: Some(child),
             stdout_pump: Some(stdout_pump),
             stderr_pump: Some(stderr_pump),
+            stderr_bytes,
             killed: false,
             timed_out: false,
             deadline,
@@ -149,7 +156,8 @@ enum Outcome {
 struct JobInner {
     child: Option<Child>,
     stdout_pump: Option<std::thread::JoinHandle<()>>,
-    stderr_pump: Option<std::thread::JoinHandle<Vec<u8>>>,
+    stderr_pump: Option<std::thread::JoinHandle<()>>,
+    stderr_bytes: Arc<Mutex<Vec<u8>>>,
     killed: bool,
     timed_out: bool,
     deadline: Option<Instant>,
@@ -212,6 +220,19 @@ impl ProcessDownloadJob {
         let inner = self.inner.lock().expect("job lock");
 
         inner.child.as_ref().map(Child::id)
+    }
+
+    pub fn stderr_tail(&self, max_bytes: usize) -> String {
+        let inner = self.inner.lock().expect("job lock");
+        let kept = inner.stderr_bytes.lock().expect("stderr lock");
+
+        let tail = if kept.len() > max_bytes {
+            &kept[kept.len() - max_bytes..]
+        } else {
+            &kept[..]
+        };
+
+        String::from_utf8_lossy(tail).into_owned()
     }
 
     fn settled(&self) -> std::sync::MutexGuard<'_, JobInner> {
@@ -291,10 +312,11 @@ fn settle_child(inner: &mut JobInner) -> Vec<u8> {
         let _ = pump.join();
     }
 
-    match inner.stderr_pump.take() {
-        Some(pump) => pump.join().unwrap_or_default(),
-        None => Vec::new(),
+    if let Some(pump) = inner.stderr_pump.take() {
+        let _ = pump.join();
     }
+
+    inner.stderr_bytes.lock().expect("stderr lock").clone()
 }
 
 impl Drop for ProcessDownloadJob {
@@ -466,7 +488,8 @@ fn spawn(executable: &Path, args: &[String], direct: bool) -> Result<Child, Erro
         .args(args)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
+        .stderr(Stdio::piped())
+        .env("PYTHONUNBUFFERED", "1");
 
     if direct {
         for name in PROXY_ENV {
@@ -520,19 +543,27 @@ fn spawn_pumps(
     stdout: std::process::ChildStdout,
     stderr: std::process::ChildStderr,
     events: Arc<Mutex<Vec<ProgressEvent>>>,
-) -> (
-    std::thread::JoinHandle<()>,
-    std::thread::JoinHandle<Vec<u8>>,
-) {
+    stderr_bytes: Arc<Mutex<Vec<u8>>>,
+) -> (std::thread::JoinHandle<()>, std::thread::JoinHandle<()>) {
     let progress = std::thread::spawn(move || {
-        let reader = std::io::BufReader::new(stdout);
+        let mut reader = std::io::BufReader::new(stdout);
+        let mut line = Vec::new();
 
-        for line in reader.lines() {
-            let Ok(line) = line else {
-                break;
+        loop {
+            line.clear();
+
+            let count = match reader.read_until(b'\n', &mut line) {
+                Ok(0) | Err(_) => break,
+                Ok(count) => count,
             };
 
-            let Some(rest) = line.strip_prefix(PROGRESS_PREFIX) else {
+            if count == 0 {
+                break;
+            }
+
+            let text = String::from_utf8_lossy(&line);
+
+            let Some(rest) = text.strip_prefix(PROGRESS_PREFIX) else {
                 continue;
             };
 
@@ -547,8 +578,6 @@ fn spawn_pumps(
     let errors = std::thread::spawn(move || {
         let mut stderr = stderr;
 
-        let mut kept = Vec::new();
-
         let mut chunk = [0u8; 8192];
 
         loop {
@@ -557,14 +586,14 @@ fn spawn_pumps(
                 Ok(count) => count,
             };
 
-            if kept.len() < STDERR_CAP {
-                let room = STDERR_CAP - kept.len();
+            if let Ok(mut kept) = stderr_bytes.lock() {
+                if kept.len() < STDERR_CAP {
+                    let room = STDERR_CAP - kept.len();
 
-                kept.extend_from_slice(&chunk[..count.min(room)]);
+                    kept.extend_from_slice(&chunk[..count.min(room)]);
+                }
             }
         }
-
-        kept
     });
 
     (progress, errors)

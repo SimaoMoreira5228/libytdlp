@@ -32,6 +32,8 @@ The existing `windows` and `macos` CI jobs build and test FULL only. Nobody ran 
 
 ## Bounds worth knowing
 
+- The staged scrubbed-environment run (`env -i`) keeps the test interpreter's directory on `PATH` and nothing else. Embedded `Py_Initialize` without a program name resolves `python3` through `PATH` for its path computation; a `PATH` with no interpreter in it degrades newer CPython releases (3.14 refuses to guess `lib-dynload`, older versions fall back). `LIBYTDLP_*` and `PYTHON*` stay stripped — that independence is what the run proves.
+
 - `SYSTEM_YTDLP_SYSTEM_PYTHON` fails at configure time when `yt_dlp` isn't importable on the embed interpreter. Loud and early, by design. In CI the `build-test` SYSTEM leg pip-installs the pinned version first.
 - `SYSTEM_YTDLP_SYSTEM_PYTHON` ignores the compiled-in and staged yt-dlp paths. An explicit `LIBYTDLP_YTDLP_DIR` still wins if you set one.
 - Only `FULL_BUNDLED` installs the bridge plus the pinned yt-dlp sources. The other two profiles install the bridge plus (BUNDLED) the yt-dlp sources, and every profile runs on the system interpreter with site packages visible. No profile ships an interpreter.

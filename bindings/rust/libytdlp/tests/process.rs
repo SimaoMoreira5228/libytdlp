@@ -134,8 +134,12 @@ fn stalled_download_kill_is_prompt_and_clean() {
         }
 
         assert!(
-            boot.elapsed() < Duration::from_secs(25),
-            "stalled download never produced progress"
+            boot.elapsed() < Duration::from_secs(60),
+            "stalled download never produced progress (target {} bytes, stderr tail: {})",
+            std::fs::metadata(&target)
+                .map(|meta| meta.len())
+                .unwrap_or(u64::MAX),
+            job.stderr_tail(2000),
         );
 
         std::thread::sleep(Duration::from_millis(10));

@@ -226,8 +226,10 @@ endif()
 message(STATUS "staged smoke output without env:\n${run_bare_output}")
 
 if(NOT CMAKE_HOST_SYSTEM_NAME STREQUAL "Windows")
+  get_filename_component(LIBYTDLP_TEST_PYTHON_DIR "${LIBYTDLP_TEST_PYTHON}" DIRECTORY)
+
   execute_process(
-    COMMAND env -i PATH=/usr/bin:/bin "${staged_binary}"
+    COMMAND env -i PATH=${LIBYTDLP_TEST_PYTHON_DIR}:/usr/bin:/bin "${staged_binary}"
     RESULT_VARIABLE run_scrubbed_result
     OUTPUT_VARIABLE run_scrubbed_output
     ERROR_VARIABLE run_scrubbed_output
