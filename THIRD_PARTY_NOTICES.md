@@ -6,7 +6,7 @@ is Apache-2.0 (see LICENSE). Nothing below is relicensed by us.
 ## yt-dlp (pinned submodule at third_party/yt-dlp)
 
 - Origin: https://github.com/yt-dlp/yt-dlp
-- Pinned revision: f59cd0ba0a3c666fa5d8793b073fa9f03cfecc22 (post-2026.08.19 master; reported version 2026.08.19)
+- Pinned revision: 6ccd977303412151ee23352c6257dd658ffc1987 (release 2026.10.21; reported version 2026.10.21)
 - License: Unlicense (public-domain dedication with permissive fallback).
   Keep its upstream LICENSE file wherever the submodule ships.
 - Note: upstream warns that some standalone PyInstaller executables they
