@@ -165,6 +165,7 @@ fn cmake_build(root: &std::path::Path) -> PathBuf {
 
     let mut config = cmake::Config::new(root);
     config.define("LIBYTDLP_BUILD_RUST", "OFF");
+    config.define("BUILD_TESTING", "OFF");
 
     if release {
         config.profile("Release");
