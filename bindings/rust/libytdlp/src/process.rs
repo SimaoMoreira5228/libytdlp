@@ -119,12 +119,14 @@ impl ProcessClient {
 
         let events = Arc::new(Mutex::new(Vec::new()));
         let stderr_bytes = Arc::new(Mutex::new(Vec::new()));
+        let lines_seen = Arc::new(Mutex::new(0u64));
 
         let (stdout_pump, stderr_pump) = spawn_pumps(
             stdout,
             stderr,
             Arc::clone(&events),
             Arc::clone(&stderr_bytes),
+            Arc::clone(&lines_seen),
         );
 
         let deadline = self.timeout.map(|window| Instant::now() + window);
@@ -144,6 +146,7 @@ impl ProcessClient {
         Ok(ProcessDownloadJob {
             inner: Mutex::new(inner),
             events,
+            lines_seen,
         })
     }
 }
@@ -168,6 +171,7 @@ struct JobInner {
 pub struct ProcessDownloadJob {
     inner: Mutex<JobInner>,
     events: Arc<Mutex<Vec<ProgressEvent>>>,
+    lines_seen: Arc<Mutex<u64>>,
 }
 
 impl ProcessDownloadJob {
@@ -220,6 +224,10 @@ impl ProcessDownloadJob {
         let inner = self.inner.lock().expect("job lock");
 
         inner.child.as_ref().map(Child::id)
+    }
+
+    pub fn lines_seen(&self) -> u64 {
+        *self.lines_seen.lock().expect("lines lock")
     }
 
     pub fn stderr_tail(&self, max_bytes: usize) -> String {
@@ -544,6 +552,7 @@ fn spawn_pumps(
     stderr: std::process::ChildStderr,
     events: Arc<Mutex<Vec<ProgressEvent>>>,
     stderr_bytes: Arc<Mutex<Vec<u8>>>,
+    lines_seen: Arc<Mutex<u64>>,
 ) -> (std::thread::JoinHandle<()>, std::thread::JoinHandle<()>) {
     let progress = std::thread::spawn(move || {
         let mut reader = std::io::BufReader::new(stdout);
@@ -561,13 +570,17 @@ fn spawn_pumps(
                 break;
             }
 
+            if let Ok(mut seen) = lines_seen.lock() {
+                *seen += 1;
+            }
+
             let text = String::from_utf8_lossy(&line);
 
-            let Some(rest) = text.strip_prefix(PROGRESS_PREFIX) else {
+            let Some(begin) = text.find(PROGRESS_PREFIX) else {
                 continue;
             };
 
-            if let Some(event) = parse_progress_line(rest) {
+            if let Some(event) = parse_progress_line(&text[begin + PROGRESS_PREFIX.len()..]) {
                 if let Ok(mut queued) = events.lock() {
                     queued.push(event);
                 }
@@ -587,10 +600,12 @@ fn spawn_pumps(
             };
 
             if let Ok(mut kept) = stderr_bytes.lock() {
-                if kept.len() < STDERR_CAP {
-                    let room = STDERR_CAP - kept.len();
+                kept.extend_from_slice(&chunk[..count]);
 
-                    kept.extend_from_slice(&chunk[..count.min(room)]);
+                let overflow = kept.len().saturating_sub(STDERR_CAP);
+
+                if overflow > 0 {
+                    kept.drain(..overflow);
                 }
             }
         }
@@ -600,9 +615,7 @@ fn spawn_pumps(
 }
 
 fn parse_progress_line(line: &str) -> Option<ProgressEvent> {
-    let value: serde_json::Value = serde_json::from_str(line).ok()?;
-
-    let table = value.as_object()?;
+    let table = progress_table(line)?;
 
     let mut event = serde_json::Map::new();
 
@@ -635,6 +648,59 @@ fn parse_progress_line(line: &str) -> Option<ProgressEvent> {
     }
 
     Some(ProgressEvent::from_value(serde_json::Value::Object(event)))
+}
+
+fn progress_table(line: &str) -> Option<serde_json::Map<String, serde_json::Value>> {
+    if let Ok(value) = serde_json::from_str::<serde_json::Value>(line) {
+        return value.as_object().cloned();
+    }
+
+    scan_progress_table(line)
+}
+
+fn scan_progress_table(line: &str) -> Option<serde_json::Map<String, serde_json::Value>> {
+    let mut table = serde_json::Map::new();
+
+    for key in ["downloaded_bytes", "total_bytes", "total_bytes_estimate"] {
+        if let Some(text) = scan_field(line, key, false) {
+            table.insert(key.to_owned(), serde_json::Value::String(text.to_owned()));
+        }
+    }
+
+    if let Some(name) = scan_field(line, "filename", true) {
+        table.insert(
+            "filename".to_owned(),
+            serde_json::Value::String(name.to_owned()),
+        );
+    }
+
+    if table.is_empty() { None } else { Some(table) }
+}
+
+fn scan_field<'line>(line: &'line str, key: &str, last: bool) -> Option<&'line str> {
+    let needle = format!("\"{key}\": \"");
+
+    let begin = line.find(needle.as_str())? + needle.len();
+
+    let rest = &line[begin..];
+
+    let end = if last {
+        let trimmed = line.trim_end();
+
+        let object = trimmed.strip_suffix('}').unwrap_or(trimmed);
+
+        let closing = object.rfind('"')?;
+
+        if closing < begin {
+            return None;
+        }
+
+        closing - begin
+    } else {
+        rest.find('"')?
+    };
+
+    Some(&rest[..end])
 }
 
 fn read_info_json(target: &Path) -> Result<String, Error> {
@@ -728,6 +794,19 @@ mod tests {
         assert_eq!(missing.filename(), None);
 
         assert!(parse_progress_line("not json").is_none());
+    }
+
+    #[test]
+    fn progress_line_with_windows_path_scans_fields() {
+        let event = parse_progress_line(
+            "{\"status\": \"downloading\", \"downloaded_bytes\": \"8788599\", \"total_bytes\": \"None\", \"total_bytes_estimate\": \"32000000\", \"filename\": \"C:\\Users\\RUNNER~1\\Temp\\out.bin\"}\n",
+        )
+        .expect("windows path must parse");
+
+        assert_eq!(event.status(), Some("downloading"));
+        assert_eq!(event.downloaded_bytes(), Some(8788599));
+        assert_eq!(event.total_bytes(), Some(32000000));
+        assert_eq!(event.filename(), Some("C:\\Users\\RUNNER~1\\Temp\\out.bin"));
     }
 
     #[test]
