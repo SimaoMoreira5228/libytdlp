@@ -175,6 +175,8 @@ jobs:
         run: echo "${{ github.workspace }}\build" | Out-File -Append $env:GITHUB_PATH
       - name: Test
         run: ctest --test-dir build --output-on-failure --timeout 300
+      - name: Install
+        run: cmake --install build --prefix staged
       - name: Rust tests
         working-directory: bindings/rust
         env:
