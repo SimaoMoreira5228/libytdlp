@@ -17,10 +17,13 @@ Legend: `verified` (proof named) · `known-broken` (reason named) · `unknown` (
 | 3.14.8 (distro) | verified | verified | verified |
 | 3.12.12 (uv-managed) | partial (see note 1) | unknown | unknown |
 | 3.13.8 (uv-managed) | unknown | partial (see note 1) | unknown |
+| 3.12 (setup-python, aarch64) | verified | unknown | unknown |
 
 Proof for the 3.14.8 row: full `ctest` (smoke, jobs, bridge, install-tree) green on all three profiles, each from a clean configure. The SYSTEM cell was also probed directly: `runtime_info` reports `yt_dlp 2026.08.19` (the system package) and a `sys_path` with no bundled checkout in it, while the other two profiles report `2026.10.21` from the submodule. CI jobs `build-test` (profile axis) and `python-versions` (3.12–3.14, FULL) re-prove this row and the version range on every push.
 
 Note 1: uv-managed interpreters are relocatable builds with no usable install prefix, so plain embedding boot fails on them (`init_fs_encoding`, no `encodings` module) unless `PYTHONHOME` points at the interpreter dir. With that set, smoke + jobs + bridge pass on 3.12.12/FULL and 3.13.8/BUNDLED. `install-tree` on those interpreters is known-broken: the staged scrubbed-environment run (`env -i`) strips `PYTHONHOME` and the staged tree can't boot. This is a property of relocatable interpreters, not of any profile. Distro and setup-python interpreters have real prefixes and don't need the workaround.
+
+Proof for the aarch64 row: the `linux-arm64` CI job (`ubuntu-24.04-arm`, setup-python 3.12, default profile) runs full `ctest` plus the Rust suite green. No arch-specific code exists in the tree (no intrinsics, no assembler, no pointer-width assumptions), so no per-arch porting was needed.
 
 ## Windows / macOS
 
