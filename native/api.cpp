@@ -7,6 +7,7 @@
 #include <mutex>
 #include <new>
 #include <string>
+#include <string_view>
 
 #include "bridge.hpp"
 #include "install_dirs.hpp"
@@ -35,6 +36,14 @@ std::string installed_share_dir() {
     return libytdlp::staged_share_dir();
 }
 
+bool system_ytdlp() {
+#ifdef LIBYTDLP_DEPLOYMENT_PROFILE
+    return std::string_view(LIBYTDLP_DEPLOYMENT_PROFILE) == "SYSTEM_YTDLP_SYSTEM_PYTHON";
+#else
+    return false;
+#endif
+}
+
 std::string bridge_dir() {
     const char* from_env = std::getenv("LIBYTDLP_BRIDGE_DIR");
     if (from_env != nullptr) {
@@ -60,6 +69,10 @@ std::string ytdlp_dir() {
     const char* from_env = std::getenv("LIBYTDLP_YTDLP_DIR");
     if (from_env != nullptr) {
         return from_env;
+    }
+
+    if (system_ytdlp()) {
+        return std::string();
     }
 
     std::string share = installed_share_dir();

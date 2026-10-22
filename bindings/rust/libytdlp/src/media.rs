@@ -278,10 +278,14 @@ impl MediaInfo {
     pub(crate) fn from_raw(result: *mut sys::LyResult) -> Result<Self, Error> {
         let text = crate::read_result_json(result)?;
 
-        let value: serde_json::Value = serde_json::from_str(&text)
+        Self::from_json_text(text)
+    }
+
+    pub(crate) fn from_json_text(raw: String) -> Result<Self, Error> {
+        let value: serde_json::Value = serde_json::from_str(&raw)
             .map_err(|failed| Error::new(Kind::Internal, failed.to_string()))?;
 
-        Ok(Self { raw: text, value })
+        Ok(Self { raw, value })
     }
 }
 

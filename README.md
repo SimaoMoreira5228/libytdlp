@@ -114,6 +114,14 @@ Cancel with `ly_job_cancel`. It's a suggestion, not a kill switch: yt-dlp only n
 
 Where files land is your call. Pass `outtmpl` (and `paths`, `format`, whatever else) through the context options and yt-dlp does the rest. The library doesn't fence you into a directory in M3, so pick templates that stay where you expect. Same goes for FFmpeg: still external, still found on `PATH` unless you point elsewhere. Downloads that need postprocessing fail without it.
 
+## Experimental process backend
+
+The Rust bindings also ship a prototype that downloads through a real `yt-dlp` child process instead of the embedded interpreter: `ProcessClient` and `ProcessDownloadJob` in `libytdlp::process`. Same shape as the native jobs (`download`, `poll`, `wait`, `cancel`), different stop: cancel kills the whole process tree, so a stalled transfer dies in milliseconds.
+
+It finds `yt-dlp` on `PATH`, or you hand it an exact binary. Only `outtmpl` (literal paths, no template fields) and `proxy` options exist. Failures map to the usual `Kind` values. Timeouts cover the whole wait.
+
+This is research, not a second API. It exists to test whether a killable subprocess backend belongs behind the C ABI later. Expect it to move or disappear.
+
 ## Checks
 
 `./dev test` runs everything offline. UBSan is clean. AddressSanitizer trips over a system crypto library yt-dlp pulls in, that's their `dlopen` flags fighting the sanitizer, not our code. So CI runs UBSan only.
@@ -126,7 +134,11 @@ Three ways to run this, same API in all of them.
 
 Set it at configure time: `cmake -DLIBYTDLP_DEPLOYMENT_PROFILE=BUNDLED_YTDLP_SYSTEM_PYTHON`. Ask the library what it ended up with through `ly_version_info`, or `runtime_info()` in Rust. Same JSON either way.
 
-`FULL_BUNDLED` installs go further: the prefix carries its own CPython standard library plus a small record of the exact libpython used, and the library boots Python in isolated mode from those paths. No `PYTHONPATH`, no `PYTHONHOME`, no system site packages. Set every `PYTHON*` var you like, it gets ignored. On Windows the staged tree also carries the `DLLs` extension-module directory, since that is where its `socket`/`_ssl` live.
+What lands in the prefix differs. `FULL_BUNDLED` installs the bridge and the pinned yt-dlp sources. `BUNDLED_YTDLP_SYSTEM_PYTHON` installs the same two and runs on the distro Python. `SYSTEM_YTDLP_SYSTEM_PYTHON` installs just the bridge and imports `yt_dlp` from your interpreter. Configure fails outright if it can't import it there, so you find out before building, not at first extraction.
+
+Every profile runs on a system-provisioned interpreter, site packages and all. `SYSTEM_YTDLP_SYSTEM_PYTHON` also ignores the bundled yt-dlp checkout entirely, unless you force one in with `LIBYTDLP_YTDLP_DIR`. libytdlp never ships its own interpreter; if your deployment can't use the system one, provision it with your distro, `setup-python`, or python-build-standalone.
+
+CI builds and tests all three profiles on Linux, plus CPython 3.12 through 3.14 on the default profile. Windows and macOS jobs still cover `FULL_BUNDLED` only. The full matrix of what was actually run lives in `COMPATIBILITY.md`.
 
 FFmpeg is never bundled. yt-dlp finds `ffmpeg` on `PATH` like always, or you hand a location to one context through the normal options. A missing FFmpeg only breaks the operations that need it. Nothing else.
 
@@ -146,14 +158,12 @@ Under the prefix:
 
 ```
 include/libytdlp/          the C ABI headers
-lib|lib64/libytdlp.so*     shared library (rpath $ORIGIN on Linux)
-lib|lib64/libpython*.so*   staged interpreter, Linux only for now
+lib|lib64/libytdlp.so*     shared library
 lib|lib64/libytdlp.a       static archive
 lib|lib64/cmake/libytdlp/  find_package config, versioned
+bin/ytdlp.dll              shared library (Windows)
 share/libytdlp/python/     the bridge, used automatically
 share/libytdlp/yt-dlp/     pinned yt-dlp sources, used automatically
-share/libytdlp/python-stdlib/  staged CPython stdlib (plus DLLs on Windows)
-share/libytdlp/runtime.json    which libpython and stdlib the stage came from
 share/libytdlp/sbom.json   generated at install time from pinned sources
 share/doc/libytdlp/        LICENSE, NOTICE, THIRD_PARTY_NOTICES.md
 ```
@@ -167,7 +177,7 @@ find_package(libytdlp REQUIRED)
 target_link_libraries(myapp PRIVATE libytdlp::ytdlp)
 ```
 
-Pass `-DCMAKE_PREFIX_PATH=/your/prefix` at configure time when the install isn't on a system path. `libytdlp::ytdlp` is the shared library, `libytdlp::ytdlp_static` is the static one. Both are installed, and the static target carries its Threads, Python, and C++ runtime linkage with it, so plain C projects link it without extra flags. The shared library finds the staged tree next to itself. A static link has no library path to anchor to, so point it at the tree explicitly and it isolates the same way: `LIBYTDLP_BRIDGE_DIR=<prefix>/share/libytdlp/python` and `LIBYTDLP_YTDLP_DIR=<prefix>/share/libytdlp/yt-dlp`.
+Pass `-DCMAKE_PREFIX_PATH=/your/prefix` at configure time when the install isn't on a system path. `libytdlp::ytdlp` is the shared library, `libytdlp::ytdlp_static` is the static one. Both are installed, and the static target carries its Threads, Python, and C++ runtime linkage with it, so plain C projects link it without extra flags. The shared library finds the staged tree next to itself. A static link has no library path to anchor to, so point it at the tree explicitly: `LIBYTDLP_BRIDGE_DIR=<prefix>/share/libytdlp/python` and `LIBYTDLP_YTDLP_DIR=<prefix>/share/libytdlp/yt-dlp`.
 
 ### From Rust
 
@@ -240,7 +250,7 @@ No extra crates, just `std` and `libytdlp`. To try it offline, serve a file with
 
 ## Pins
 
-- yt-dlp `2026.08.19`, submodule at `third_party/yt-dlp`, unmodified.
+- yt-dlp `2026.10.21`, submodule at `third_party/yt-dlp`, unmodified.
 - Test venv pins the same version from PyPI. Keep the two in sync.
 - Needs CPython 3.11 or newer.
 

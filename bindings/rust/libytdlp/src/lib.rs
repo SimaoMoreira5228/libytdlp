@@ -7,6 +7,7 @@ mod client;
 mod error;
 mod job;
 mod media;
+mod process;
 mod progress;
 mod runtime;
 
@@ -20,6 +21,9 @@ pub use job::{DownloadJob, JobState, WaitForDownload};
 pub use media::Format;
 pub use media::MediaEntry;
 pub use media::MediaInfo;
+pub use process::ProcessClient;
+pub use process::ProcessConfig;
+pub use process::ProcessDownloadJob;
 pub use progress::ProgressEvent;
 pub use runtime::{RuntimeInfo, abi_version, runtime_info};
 

@@ -29,6 +29,12 @@ if(NOT LIBYTDLP_DEPLOYMENT_PROFILE MATCHES
         "BUNDLED_YTDLP_SYSTEM_PYTHON or SYSTEM_YTDLP_SYSTEM_PYTHON")
 endif()
 
+set(LIBYTDLP_BUNDLE_YTDLP ON)
+
+if(LIBYTDLP_DEPLOYMENT_PROFILE STREQUAL "SYSTEM_YTDLP_SYSTEM_PYTHON")
+    set(LIBYTDLP_BUNDLE_YTDLP OFF)
+endif()
+
 set(LIBYTDLP_SANITIZERS "")
 if(LIBYTDLP_SANITIZE_ADDRESS)
     list(APPEND LIBYTDLP_SANITIZERS address)
@@ -49,6 +55,12 @@ if(LIBYTDLP_YTDLP_VERSION)
     message(STATUS "yt-dlp on system Python: ${LIBYTDLP_YTDLP_VERSION}")
 else()
     message(STATUS "yt-dlp not importable on system Python; tests fall back to third_party/yt-dlp")
+endif()
+
+if(LIBYTDLP_DEPLOYMENT_PROFILE STREQUAL "SYSTEM_YTDLP_SYSTEM_PYTHON"
+    AND NOT LIBYTDLP_YTDLP_VERSION)
+    message(FATAL_ERROR "SYSTEM_YTDLP_SYSTEM_PYTHON needs yt-dlp importable on "
+        "${Python_EXECUTABLE} (pip install \"yt-dlp==<pinned>\", see pyproject.toml)")
 endif()
 
 execute_process(
@@ -179,85 +191,16 @@ install(DIRECTORY python/libytdlp_bridge DESTINATION share/libytdlp/python
     PATTERN "__pycache__" EXCLUDE
     PATTERN "*.pyc" EXCLUDE
 )
-install(
-    DIRECTORY third_party/yt-dlp/
-    DESTINATION share/libytdlp/yt-dlp
-    PATTERN ".git*" EXCLUDE
-    PATTERN "__pycache__" EXCLUDE
-    PATTERN "*.pyc" EXCLUDE
-)
-
-execute_process(
-    COMMAND ${Python_EXECUTABLE} -c "import sysconfig; print(sysconfig.get_path('stdlib'))"
-    OUTPUT_VARIABLE LIBYTDLP_PYTHON_STDLIB
-    OUTPUT_STRIP_TRAILING_WHITESPACE
-    ERROR_QUIET
-)
-
-if(LIBYTDLP_PYTHON_STDLIB)
-    file(TO_CMAKE_PATH "${LIBYTDLP_PYTHON_STDLIB}" LIBYTDLP_PYTHON_STDLIB)
-    message(STATUS "Bundled stdlib source: ${LIBYTDLP_PYTHON_STDLIB}")
-
+if(LIBYTDLP_BUNDLE_YTDLP)
     install(
-        DIRECTORY "${LIBYTDLP_PYTHON_STDLIB}/"
-        DESTINATION share/libytdlp/python-stdlib
-        PATTERN "site-packages" EXCLUDE
+        DIRECTORY third_party/yt-dlp/
+        DESTINATION share/libytdlp/yt-dlp
+        PATTERN ".git*" EXCLUDE
         PATTERN "__pycache__" EXCLUDE
         PATTERN "*.pyc" EXCLUDE
-        PATTERN "*.pyo" EXCLUDE
-        PATTERN "config-*" EXCLUDE
     )
-
-    get_filename_component(LIBYTDLP_PYTHON_HOME "${LIBYTDLP_PYTHON_STDLIB}" DIRECTORY)
-
-    if(EXISTS "${LIBYTDLP_PYTHON_HOME}/DLLs")
-        install(
-            DIRECTORY "${LIBYTDLP_PYTHON_HOME}/DLLs/"
-            DESTINATION share/libytdlp/python-stdlib/DLLs
-            PATTERN "__pycache__" EXCLUDE
-            PATTERN "*.pyc" EXCLUDE
-            PATTERN "*.pyo" EXCLUDE
-        )
-    endif()
-
-    configure_file(
-        "${CMAKE_CURRENT_SOURCE_DIR}/cmake/runtime.json.in"
-        "${CMAKE_CURRENT_BINARY_DIR}/generated/runtime.json"
-        @ONLY
-    )
-
-    install(
-        FILES "${CMAKE_CURRENT_BINARY_DIR}/generated/runtime.json"
-        DESTINATION share/libytdlp
-    )
-else()
-    message(WARNING "Python stdlib not found; bundled runtime will be incomplete")
 endif()
 
-if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    execute_process(
-        COMMAND ${Python_EXECUTABLE} -c "import sysconfig; print(sysconfig.get_config_var('INSTSONAME') or '')"
-        OUTPUT_VARIABLE LIBYTDLP_PYTHON_SONAME
-        OUTPUT_STRIP_TRAILING_WHITESPACE
-        ERROR_QUIET
-    )
-
-    get_filename_component(LIBYTDLP_PYTHON_LIB_REAL "${Python_LIBRARIES}" REALPATH)
-
-    if(LIBYTDLP_PYTHON_SONAME
-        AND LIBYTDLP_PYTHON_LIB_REAL MATCHES "\\.so(\\.|$)"
-        AND EXISTS "${LIBYTDLP_PYTHON_LIB_REAL}")
-        install(
-            FILES "${LIBYTDLP_PYTHON_LIB_REAL}"
-            DESTINATION ${CMAKE_INSTALL_LIBDIR}
-            RENAME "${LIBYTDLP_PYTHON_SONAME}"
-        )
-
-        set_target_properties(ytdlp PROPERTIES INSTALL_RPATH "$ORIGIN")
-    else()
-        message(STATUS "libpython shared object not found; skipping staged libpython")
-    endif()
-endif()
 install(EXPORT libytdlp-targets
     NAMESPACE libytdlp::
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/libytdlp
@@ -315,10 +258,13 @@ if(BUILD_TESTING)
     target_link_libraries(ly_smoke PRIVATE ytdlp Python::Python)
     if(NOT WIN32)
         target_link_libraries(ly_smoke PRIVATE Threads::Threads)
+    else()
+        target_link_libraries(ly_smoke PRIVATE ws2_32)
     endif()
     target_compile_definitions(ly_smoke PRIVATE
         LIBYTDLP_TEST_PYTHON="${Python_EXECUTABLE}"
         LIBYTDLP_SLOW_SERVER="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/slow_server.py"
+        LIBYTDLP_DEPLOYMENT_PROFILE="${LIBYTDLP_DEPLOYMENT_PROFILE}"
     )
 
     add_executable(ly_jobs tests/native/jobs.c tests/native/fixture.c)
@@ -373,14 +319,21 @@ if(BUILD_TESTING)
     endif()
 
     add_test(NAME smoke COMMAND ly_smoke)
-    set_tests_properties(smoke PROPERTIES ENVIRONMENT
-        "LIBYTDLP_BRIDGE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/python;LIBYTDLP_YTDLP_DIR=${CMAKE_CURRENT_SOURCE_DIR}/third_party/yt-dlp"
-    )
+
+    if(LIBYTDLP_DEPLOYMENT_PROFILE STREQUAL "SYSTEM_YTDLP_SYSTEM_PYTHON")
+        set(LIBYTDLP_TEST_ENV
+            "LIBYTDLP_BRIDGE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/python"
+        )
+    else()
+        set(LIBYTDLP_TEST_ENV
+            "LIBYTDLP_BRIDGE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/python;LIBYTDLP_YTDLP_DIR=${CMAKE_CURRENT_SOURCE_DIR}/third_party/yt-dlp"
+        )
+    endif()
+
+    set_tests_properties(smoke PROPERTIES ENVIRONMENT "${LIBYTDLP_TEST_ENV}")
 
     add_test(NAME jobs COMMAND ly_jobs)
-    set_tests_properties(jobs PROPERTIES ENVIRONMENT
-        "LIBYTDLP_BRIDGE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/python;LIBYTDLP_YTDLP_DIR=${CMAKE_CURRENT_SOURCE_DIR}/third_party/yt-dlp"
-    )
+    set_tests_properties(jobs PROPERTIES ENVIRONMENT "${LIBYTDLP_TEST_ENV}")
 
     if(WIN32)
         set_tests_properties(smoke jobs PROPERTIES ENVIRONMENT_MODIFICATION
@@ -419,6 +372,7 @@ if(BUILD_TESTING)
                 "-DLIBYTDLP_PYTHON_LIB=${Python_LIBRARIES}"
                 -DLIBYTDLP_PYTHON_LIBDIR=${LIBYTDLP_PYTHON_LIBDIR}
                 -DLIBYTDLP_PROJECT_VERSION=${PROJECT_VERSION}
+                -DLIBYTDLP_DEPLOYMENT_PROFILE=${LIBYTDLP_DEPLOYMENT_PROFILE}
                 -DLIBYTDLP_WORK_DIR=${LIBYTDLP_INSTALL_VERIFY_WORK}
                 -DLIBYTDLP_BUILD_CONFIG=$<CONFIG>
                 -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/install_verify.cmake

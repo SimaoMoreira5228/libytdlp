@@ -7,19 +7,63 @@ on:
 
 jobs:
   build-test:
+    strategy:
+      matrix:
+        profile: [FULL_BUNDLED, BUNDLED_YTDLP_SYSTEM_PYTHON, SYSTEM_YTDLP_SYSTEM_PYTHON]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
       - name: Install system deps
-        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build python3-dev
+        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: astral-sh/setup-uv@v6
+      - name: Sync Python env
+        run: uv sync --locked
+      - name: Install pinned yt-dlp on the embed interpreter
+        if: matrix.profile == 'SYSTEM_YTDLP_SYSTEM_PYTHON'
+        run: |
+          PIN=$(python - <<'PY'
+          import tomllib
+          deps = tomllib.load(open('pyproject.toml', 'rb'))['project']['dependencies']
+          print([d for d in deps if d.startswith('yt-dlp==')][0].split('==')[1])
+          PY
+          )
+          python -m pip install "yt-dlp==$PIN"
+      - name: Configure and build
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
+            -DPython_EXECUTABLE="$(which python)" \
+            -DLIBYTDLP_DEPLOYMENT_PROFILE=${{ matrix.profile }}
+          cmake --build build --parallel
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+  python-versions:
+    strategy:
+      matrix:
+        python-version: ['3.12', '3.13', '3.14']
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Install system deps
+        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
       - uses: astral-sh/setup-uv@v6
       - name: Sync Python env
         run: uv sync --locked
       - name: Configure and build
         run: |
-          cmake -S . -B build -G Ninja -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+          cmake -S . -B build -G Ninja -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
+            -DPython_EXECUTABLE="$(which python)" \
+            -DLIBYTDLP_DEPLOYMENT_PROFILE=FULL_BUNDLED
           cmake --build build --parallel
       - name: Test
         run: ctest --test-dir build --output-on-failure
@@ -69,6 +113,8 @@ jobs:
           components: rustfmt, clippy
       - name: Sync Python env
         run: uv sync --locked
+      - name: Expose venv tools to later steps
+        run: echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
       - name: Configure and build native lib
         run: |
           cmake -S . -B build -G Ninja
@@ -166,6 +212,10 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Sync Python env
         run: uv sync --locked
+      - name: Expose venv tools to later steps
+        shell: pwsh
+        run: |
+          "$pwd\.venv\Scripts" | Out-File -Append $env:GITHUB_PATH
       - name: Configure
         run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
       - name: Build
@@ -196,6 +246,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Sync Python env
         run: uv sync --locked
+      - name: Expose venv tools to later steps
+        run: echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
       - name: Configure
         run: cmake -S . -B build -G Ninja -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
       - name: Build

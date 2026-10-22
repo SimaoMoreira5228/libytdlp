@@ -17,4 +17,9 @@ typedef pid_t ly_process;
 ly_process spawn_fixture(const char* bytes, const char* rate, int* port_out);
 void stop_fixture(ly_process child);
 
+void make_tmpdir(char* path, size_t len);
+void remove_tree(const char* dir);
+int dir_is_empty(const char* dir);
+int closed_loopback_port(void);
+
 #endif

@@ -34,7 +34,17 @@ static void check_host_owned_interpreter(void) {
     error = NULL;
 
     ly_result* info = NULL;
-    assert(ly_version_info(&info, &error) == LY_OK);
+    ly_status info_status = ly_version_info(&info, &error);
+
+    if (info_status != LY_OK) {
+        fprintf(
+            stderr,
+            "host-owned version info failed: %s\n",
+            error != NULL ? ly_error_message(error) : "no detail"
+        );
+    }
+
+    assert(info_status == LY_OK);
 
     const char* data = NULL;
     size_t len = 0;
@@ -214,7 +224,11 @@ static void check_version_info(void) {
     assert(data != NULL);
     assert(len > 50);
     assert(strstr(data, "deployment_profile") != NULL);
+#ifdef LIBYTDLP_DEPLOYMENT_PROFILE
+    assert(strstr(data, LIBYTDLP_DEPLOYMENT_PROFILE) != NULL);
+#else
     assert(strstr(data, "FULL_BUNDLED") != NULL);
+#endif
     printf("version info ok: %zu bytes of json\n", len);
     ly_result_release(result);
 }

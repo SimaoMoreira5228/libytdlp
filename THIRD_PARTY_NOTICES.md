@@ -17,19 +17,7 @@ is Apache-2.0 (see LICENSE). Nothing below is relicensed by us.
 ## CPython
 
 - License: Python Software Foundation License plus bundled notices.
-- System-runtime profiles link whatever CPython CMake finds (3.10+).
-- `FULL_BUNDLED`: `cmake --install` stages the build
-  Python's standard library under `<prefix>/share/libytdlp/python-stdlib`
-  (no site packages, no bytecode caches) plus a `runtime.json` record of
-  the exact libpython used, and the native runtime boots from those paths
-  with isolated `PyConfig` (no `PYTHONPATH`/`PYTHONHOME`, no system site
-  packages). Windows staging adds the `DLLs` extension-module directory
-  beside it. Ship the PSF license text with it; the staged stdlib carries
-  its own `LICENSE.txt`.
-- Linux `cmake --install` also stages the exact `libpython` shared object
-  next to `libytdlp.so` with an `$ORIGIN` rpath, so the staged library
-  loads the staged interpreter without `LD_LIBRARY_PATH`. Windows and
-  macOS keep their system-provided interpreter binary for now.
+- Every profile links the CPython CMake finds (3.11+) and runs on it. libytdlp ships no interpreter, standard library, or extension modules: in-process embedding plus a relocatable private runtime fights CPython's design (interpreter lifecycle, getpath landmarks, one runtime per process for extension modules), so interpreter provisioning stays deployment business (distro package, `setup-python`, python-build-standalone).
 
 ## Runtime dependency policy
 

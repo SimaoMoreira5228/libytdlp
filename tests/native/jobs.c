@@ -7,20 +7,8 @@
 #include <io.h>
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
-#include <winsock2.h>
-#include <ws2tcpip.h>
 #else
-#include <errno.h>
-#include <signal.h>
-#include <sys/types.h>
-#include <sys/wait.h>
 #include <unistd.h>
-
-#include <dirent.h>
-
-#include <arpa/inet.h>
-#include <netinet/in.h>
-#include <sys/socket.h>
 #endif
 
 #include <libytdlp/libytdlp.h>
@@ -70,90 +58,6 @@ static void check_job_null_handling(void) {
 
     assert(ly_context_release(context) == LY_OK);
 }
-
-#ifdef _WIN32
-static void make_tmpdir(char* path, size_t len) {
-    assert(len > 32);
-
-    char base[MAX_PATH];
-    DWORD got = GetTempPathA(sizeof(base), base);
-    assert(got != 0);
-    assert(got < sizeof(base));
-
-    static int counter = 0;
-    counter++;
-
-    int written =
-        snprintf(path, len, "%sly_job_%lu_%d", base, (unsigned long)GetCurrentProcessId(), counter);
-    assert(written > 0);
-    assert((size_t)written < len);
-    assert(CreateDirectoryA(path, NULL) != 0);
-
-    for (size_t i = 0; path[i] != '\0'; i++) {
-        if (path[i] == '\\') {
-            path[i] = '/';
-        }
-    }
-}
-
-static void remove_tree(const char* dir) {
-    char pattern[512];
-    int written = snprintf(pattern, sizeof(pattern), "%s\\*", dir);
-    assert(written > 0);
-    assert((size_t)written < sizeof(pattern));
-
-    WIN32_FIND_DATAA found = {0};
-    HANDLE listing = FindFirstFileA(pattern, &found);
-    assert(listing != INVALID_HANDLE_VALUE);
-
-    for (;;) {
-        if (strcmp(found.cFileName, ".") != 0 && strcmp(found.cFileName, "..") != 0) {
-            char child[512];
-            int child_written = snprintf(child, sizeof(child), "%s\\%s", dir, found.cFileName);
-            assert(child_written > 0);
-            assert((size_t)child_written < sizeof(child));
-            assert(DeleteFileA(child) != 0);
-        }
-
-        if (FindNextFileA(listing, &found) == 0) {
-            break;
-        }
-    }
-
-    assert(GetLastError() == ERROR_NO_MORE_FILES);
-    assert(FindClose(listing) != 0);
-    assert(RemoveDirectoryA(dir) != 0);
-}
-#else
-static void make_tmpdir(char* path, size_t len) {
-    assert(len > 32);
-    snprintf(path, len, "/tmp/ly_job_XXXXXX");
-    assert(mkdtemp(path) != NULL);
-}
-
-static void remove_tree(const char* dir) {
-    DIR* listing = opendir(dir);
-    assert(listing != NULL);
-
-    for (;;) {
-        struct dirent* entry = readdir(listing);
-        if (entry == NULL) {
-            break;
-        }
-
-        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
-            continue;
-        }
-
-        char child[512];
-        snprintf(child, sizeof(child), "%s/%s", dir, entry->d_name);
-        assert(unlink(child) == 0);
-    }
-
-    assert(closedir(listing) == 0);
-    assert(rmdir(dir) == 0);
-}
-#endif
 
 static void check_job_bogus_url(void) {
     ly_context* context = NULL;
@@ -397,56 +301,6 @@ static void check_job_release_joins(void) {
     stop_fixture(child);
 }
 
-#ifdef _WIN32
-static int dir_is_empty(const char* dir) {
-    char pattern[512];
-    int written = snprintf(pattern, sizeof(pattern), "%s\\*", dir);
-    assert(written > 0);
-    assert((size_t)written < sizeof(pattern));
-
-    WIN32_FIND_DATAA found = {0};
-    HANDLE listing = FindFirstFileA(pattern, &found);
-    assert(listing != INVALID_HANDLE_VALUE);
-
-    int count = 0;
-
-    for (;;) {
-        if (strcmp(found.cFileName, ".") != 0 && strcmp(found.cFileName, "..") != 0) {
-            count++;
-        }
-
-        if (FindNextFileA(listing, &found) == 0) {
-            break;
-        }
-    }
-
-    assert(GetLastError() == ERROR_NO_MORE_FILES);
-    assert(FindClose(listing) != 0);
-    return count == 0;
-}
-#else
-static int dir_is_empty(const char* dir) {
-    DIR* listing = opendir(dir);
-    assert(listing != NULL);
-
-    int count = 0;
-    for (;;) {
-        struct dirent* entry = readdir(listing);
-        if (entry == NULL) {
-            break;
-        }
-
-        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
-            continue;
-        }
-        count++;
-    }
-
-    assert(closedir(listing) == 0);
-    return count == 0;
-}
-#endif
-
 static void check_job_per_download_override(void) {
     int port = 0;
     ly_process child = spawn_fixture("65536", "8000000", &port);
@@ -645,50 +499,6 @@ static void check_job_download_restricted_reject(void) {
 
     stop_fixture(child);
 }
-
-#ifdef _WIN32
-static int closed_loopback_port(void) {
-    WSADATA data = {0};
-    assert(WSAStartup(MAKEWORD(2, 2), &data) == 0);
-
-    SOCKET fd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    assert(fd != INVALID_SOCKET);
-
-    struct sockaddr_in addr;
-    memset(&addr, 0, sizeof(addr));
-    addr.sin_family = AF_INET;
-    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-    addr.sin_port = htons(0);
-    assert(bind(fd, (struct sockaddr*)&addr, sizeof(addr)) == 0);
-
-    int len = sizeof(addr);
-    assert(getsockname(fd, (struct sockaddr*)&addr, &len) == 0);
-    int port = ntohs(addr.sin_port);
-    assert(port > 0);
-    assert(closesocket(fd) == 0);
-    assert(WSACleanup() == 0);
-    return port;
-}
-#else
-static int closed_loopback_port(void) {
-    int fd = socket(AF_INET, SOCK_STREAM, 0);
-    assert(fd >= 0);
-
-    struct sockaddr_in addr;
-    memset(&addr, 0, sizeof(addr));
-    addr.sin_family = AF_INET;
-    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-    addr.sin_port = htons(0);
-    assert(bind(fd, (struct sockaddr*)&addr, sizeof(addr)) == 0);
-
-    socklen_t len = sizeof(addr);
-    assert(getsockname(fd, (struct sockaddr*)&addr, &len) == 0);
-    int port = ntohs(addr.sin_port);
-    assert(port > 0);
-    assert(close(fd) == 0);
-    return port;
-}
-#endif
 
 static void check_job_closed_port_network(void) {
     int port = closed_loopback_port();

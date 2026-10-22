@@ -67,6 +67,44 @@ std::string class_name_of_type(PyObject* type) {
     return text;
 }
 
+std::string python_error_text() {
+    PyObject* type = nullptr;
+    PyObject* value = nullptr;
+    PyObject* traceback = nullptr;
+    PyErr_Fetch(&type, &value, &traceback);
+
+    OwnedPyRef type_ref(type);
+    OwnedPyRef value_ref(value);
+    OwnedPyRef traceback_ref(traceback);
+
+    if (!type_ref) {
+        return "unknown Python error";
+    }
+
+    std::string text = class_name_of_type(type_ref.get());
+
+    if (value_ref) {
+        OwnedPyRef rendered(PyObject_Str(value_ref.get()));
+
+        if (!rendered) {
+            PyErr_Clear();
+            return text;
+        }
+
+        const char* chars = PyUnicode_AsUTF8(rendered.get());
+
+        if (chars == nullptr) {
+            PyErr_Clear();
+            return text;
+        }
+
+        text += ": ";
+        text += chars;
+    }
+
+    return text;
+}
+
 ly_status map_chain(const std::vector<std::string>& names) {
     if (names.empty()) {
         return LY_E_RUNTIME;
@@ -208,8 +246,7 @@ BridgeResult call_bridge(
 
     OwnedPyRef module(PyImport_ImportModule("libytdlp_bridge.extract"));
     if (!module) {
-        PyErr_Clear();
-        out.message = "could not import libytdlp_bridge.extract";
+        out.message = "could not import libytdlp_bridge.extract: " + python_error_text();
         return out;
     }
 
@@ -293,8 +330,7 @@ BridgeResult call_download(
 
     OwnedPyRef module(PyImport_ImportModule("libytdlp_bridge.download"));
     if (!module) {
-        PyErr_Clear();
-        out.message = "could not import libytdlp_bridge.download";
+        out.message = "could not import libytdlp_bridge.download: " + python_error_text();
         return out;
     }
 
@@ -371,8 +407,7 @@ BridgeResult runtime_info_json(
 
     OwnedPyRef module(PyImport_ImportModule("libytdlp_bridge.extract"));
     if (!module) {
-        PyErr_Clear();
-        out.message = "could not import libytdlp_bridge.extract";
+        out.message = "could not import libytdlp_bridge.extract: " + python_error_text();
         return out;
     }
 

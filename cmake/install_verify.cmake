@@ -38,6 +38,20 @@ if(NOT DEFINED LIBYTDLP_PROJECT_VERSION)
   message(FATAL_ERROR "LIBYTDLP_PROJECT_VERSION is not set")
 endif()
 
+if(NOT DEFINED LIBYTDLP_DEPLOYMENT_PROFILE)
+  message(FATAL_ERROR "LIBYTDLP_DEPLOYMENT_PROFILE is not set")
+endif()
+
+if(LIBYTDLP_DEPLOYMENT_PROFILE STREQUAL "FULL_BUNDLED")
+  set(LIBYTDLP_VERIFY_BUNDLED_YTDLP TRUE)
+elseif(LIBYTDLP_DEPLOYMENT_PROFILE STREQUAL "BUNDLED_YTDLP_SYSTEM_PYTHON")
+  set(LIBYTDLP_VERIFY_BUNDLED_YTDLP TRUE)
+elseif(LIBYTDLP_DEPLOYMENT_PROFILE STREQUAL "SYSTEM_YTDLP_SYSTEM_PYTHON")
+  set(LIBYTDLP_VERIFY_BUNDLED_YTDLP FALSE)
+else()
+  message(FATAL_ERROR "unknown LIBYTDLP_DEPLOYMENT_PROFILE: ${LIBYTDLP_DEPLOYMENT_PROFILE}")
+endif()
+
 if(IS_ABSOLUTE "${LIBYTDLP_INSTALL_LIBDIR}")
   set(staged_libdir "${LIBYTDLP_INSTALL_LIBDIR}")
 else()
@@ -105,22 +119,9 @@ if(NOT EXISTS "${LIBYTDLP_INSTALL_PREFIX}/share/libytdlp/python/libytdlp_bridge/
   message(FATAL_ERROR "staged python bridge not found under ${LIBYTDLP_INSTALL_PREFIX}/share/libytdlp")
 endif()
 
-if(NOT EXISTS "${LIBYTDLP_INSTALL_PREFIX}/share/libytdlp/yt-dlp/yt_dlp/__init__.py")
+if(LIBYTDLP_VERIFY_BUNDLED_YTDLP
+  AND NOT EXISTS "${LIBYTDLP_INSTALL_PREFIX}/share/libytdlp/yt-dlp/yt_dlp/__init__.py")
   message(FATAL_ERROR "staged yt-dlp sources not found under ${LIBYTDLP_INSTALL_PREFIX}/share/libytdlp")
-endif()
-
-if(NOT EXISTS "${LIBYTDLP_INSTALL_PREFIX}/share/libytdlp/python-stdlib/os.py")
-  message(FATAL_ERROR "staged python stdlib not found under ${LIBYTDLP_INSTALL_PREFIX}/share/libytdlp")
-endif()
-
-if(NOT EXISTS "${LIBYTDLP_INSTALL_PREFIX}/share/libytdlp/runtime.json")
-  message(FATAL_ERROR "staged runtime record not found under ${LIBYTDLP_INSTALL_PREFIX}/share/libytdlp")
-endif()
-
-file(READ "${LIBYTDLP_INSTALL_PREFIX}/share/libytdlp/runtime.json" staged_runtime_record)
-
-if(NOT staged_runtime_record MATCHES "libpython")
-  message(FATAL_ERROR "staged runtime record has no libpython entry:\n${staged_runtime_record}")
 endif()
 
 foreach(staged_doc LICENSE NOTICE THIRD_PARTY_NOTICES.md)
@@ -159,40 +160,7 @@ if(staged_ffmpeg)
   message(FATAL_ERROR "staged FFmpeg artifacts must not ship: ${staged_ffmpeg}")
 endif()
 
-if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux")
-  file(GLOB staged_shared_lib "${staged_libdir}/libytdlp.so.*")
 
-  if(NOT staged_shared_lib)
-    message(FATAL_ERROR "staged shared library not found under ${staged_libdir}")
-  endif()
-
-  list(GET staged_shared_lib 0 staged_shared_first)
-
-  execute_process(
-    COMMAND ldd "${staged_shared_first}"
-    OUTPUT_VARIABLE staged_ldd_output
-    ERROR_VARIABLE staged_ldd_output
-    RESULT_VARIABLE staged_ldd_result
-  )
-
-  if(NOT staged_ldd_result EQUAL 0)
-    message(FATAL_ERROR "ldd on staged library failed:\n${staged_ldd_output}")
-  endif()
-
-  set(staged_libpython_found FALSE)
-
-  string(REPLACE "\n" ";" staged_ldd_lines "${staged_ldd_output}")
-
-  foreach(staged_ldd_line IN LISTS staged_ldd_lines)
-    if(staged_ldd_line MATCHES "libpython" AND staged_ldd_line MATCHES "${staged_libdir}")
-      set(staged_libpython_found TRUE)
-    endif()
-  endforeach()
-
-  if(NOT staged_libpython_found)
-    message(FATAL_ERROR "staged library does not load staged libpython:\n${staged_ldd_output}")
-  endif()
-endif()
 
 execute_process(
   COMMAND "${LIBYTDLP_C_COMPILER}"
@@ -207,6 +175,7 @@ execute_process(
     "-Wl,-rpath,${LIBYTDLP_PYTHON_LIBDIR}"
     "-DLIBYTDLP_TEST_PYTHON=\"${LIBYTDLP_TEST_PYTHON}\""
     "-DLIBYTDLP_SLOW_SERVER=\"${LIBYTDLP_SLOW_SERVER}\""
+    "-DLIBYTDLP_DEPLOYMENT_PROFILE=\"${LIBYTDLP_DEPLOYMENT_PROFILE}\""
     "-pthread"
     -o "${staged_binary}"
   RESULT_VARIABLE compile_result
@@ -218,10 +187,16 @@ if(NOT compile_result EQUAL 0)
   message(FATAL_ERROR "staged smoke compile failed:\n${compile_output}")
 endif()
 
+if(LIBYTDLP_DEPLOYMENT_PROFILE STREQUAL "SYSTEM_YTDLP_SYSTEM_PYTHON")
+  set(LIBYTDLP_STAGED_YTDLP_ENV "--unset=LIBYTDLP_YTDLP_DIR")
+else()
+  set(LIBYTDLP_STAGED_YTDLP_ENV "LIBYTDLP_YTDLP_DIR=${LIBYTDLP_YTDLP_DIR}")
+endif()
+
 execute_process(
   COMMAND "${CMAKE_COMMAND}" -E env
     "LIBYTDLP_BRIDGE_DIR=${LIBYTDLP_BRIDGE_DIR}"
-    "LIBYTDLP_YTDLP_DIR=${LIBYTDLP_YTDLP_DIR}"
+    "${LIBYTDLP_STAGED_YTDLP_ENV}"
     "${staged_binary}"
   RESULT_VARIABLE run_result
   OUTPUT_VARIABLE run_output
@@ -263,146 +238,6 @@ if(NOT CMAKE_HOST_SYSTEM_NAME STREQUAL "Windows")
   endif()
 
   message(STATUS "staged smoke output with scrubbed env:\n${run_scrubbed_output}")
-
-  set(staged_probe_src "${LIBYTDLP_WORK_DIR}/isolate_probe.c")
-  set(staged_probe "${LIBYTDLP_WORK_DIR}/ly_isolate_probe")
-
-  file(WRITE "${staged_probe_src}" [=[
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <libytdlp/libytdlp.h>
-
-int main(void) {
-    ly_result* info = NULL;
-    ly_error* error = NULL;
-
-    if (ly_version_info(&info, &error) != LY_OK) {
-        fprintf(stderr, "version info failed\n");
-        return 1;
-    }
-
-    const char* data = NULL;
-    size_t len = 0;
-
-    if (ly_result_json(info, &data, &len) != LY_OK || data == NULL) {
-        fprintf(stderr, "version json failed\n");
-        ly_result_release(info);
-        return 1;
-    }
-
-    char* text = (char*)malloc(len + 1);
-    memcpy(text, data, len);
-    text[len] = '\0';
-
-    int rc = 0;
-
-    if (strstr(text, "\"isolated\":true") == NULL) {
-        fprintf(stderr, "interpreter is not isolated: %s\n", text);
-        rc = 1;
-    }
-
-    if (strstr(text, "\"host_owned\":false") == NULL) {
-        fprintf(stderr, "expected owned interpreter: %s\n", text);
-        rc = 1;
-    }
-
-    if (strstr(text, LIBYTDLP_STAGED_PREFIX) == NULL) {
-        fprintf(stderr, "staged prefix missing from version info\n");
-        rc = 1;
-    }
-
-    const char* paths = strstr(text, "\"sys_path\":");
-
-    if (paths == NULL) {
-        fprintf(stderr, "version info has no sys_path\n");
-        rc = 1;
-    } else {
-        const char* open = strchr(paths, '[');
-        const char* shut = open != NULL ? strchr(open, ']') : NULL;
-
-        if (open == NULL || shut == NULL || shut < open) {
-            fprintf(stderr, "sys_path is not a list\n");
-            rc = 1;
-        } else {
-            size_t seglen = (size_t)(shut - open);
-            char* seg = (char*)malloc(seglen + 1);
-            memcpy(seg, open, seglen);
-            seg[seglen] = '\0';
-
-            if (strstr(seg, "site-packages") != NULL) {
-                fprintf(stderr, "sys_path leaks site-packages: %s\n", seg);
-                rc = 1;
-            }
-
-            if (strstr(seg, "/usr/lib") != NULL || strstr(seg, "/usr/local/lib") != NULL) {
-                fprintf(stderr, "sys_path leaks system lib: %s\n", seg);
-                rc = 1;
-            }
-
-            free(seg);
-        }
-    }
-
-    if (rc == 0) {
-        printf("isolation probe ok\n");
-    }
-
-    free(text);
-    ly_result_release(info);
-    return rc;
-}
-]=])
-
-  execute_process(
-    COMMAND "${LIBYTDLP_C_COMPILER}"
-      "${staged_probe_src}"
-      "-I${staged_include}"
-      ${LIBYTDLP_PYTHON_INCLUDES}
-      "-L${staged_libdir}"
-      "-lytdlp"
-      ${LIBYTDLP_PYTHON_LIB}
-      "-Wl,-rpath,${staged_libdir}"
-      "-Wl,-rpath,${LIBYTDLP_PYTHON_LIBDIR}"
-      "-DLIBYTDLP_STAGED_PREFIX=\"${LIBYTDLP_INSTALL_PREFIX}\""
-      "-o" "${staged_probe}"
-    RESULT_VARIABLE probe_compile_result
-    OUTPUT_VARIABLE probe_compile_output
-    ERROR_VARIABLE probe_compile_output
-  )
-
-  if(NOT probe_compile_result EQUAL 0)
-    message(FATAL_ERROR "isolation probe compile failed:\n${probe_compile_output}")
-  endif()
-
-  execute_process(
-    COMMAND "${CMAKE_COMMAND}" -E env
-      --unset=LIBYTDLP_BRIDGE_DIR
-      --unset=LIBYTDLP_YTDLP_DIR
-      "${staged_probe}"
-    RESULT_VARIABLE probe_run_result
-    OUTPUT_VARIABLE probe_run_output
-    ERROR_VARIABLE probe_run_output
-  )
-
-  if(NOT probe_run_result EQUAL 0)
-    message(FATAL_ERROR "isolation probe run failed:\n${probe_run_output}")
-  endif()
-
-  message(STATUS "isolation probe output:\n${probe_run_output}")
-
-  execute_process(
-    COMMAND env -i PATH=/usr/bin:/bin "${staged_probe}"
-    RESULT_VARIABLE probe_scrubbed_result
-    OUTPUT_VARIABLE probe_scrubbed_output
-    ERROR_VARIABLE probe_scrubbed_output
-  )
-
-  if(NOT probe_scrubbed_result EQUAL 0)
-    message(FATAL_ERROR "isolation probe run with scrubbed env failed:\n${probe_scrubbed_output}")
-  endif()
-
-  message(STATUS "isolation probe output with scrubbed env:\n${probe_scrubbed_output}")
 endif()
 
 set(consumer_src "${LIBYTDLP_WORK_DIR}/consumer")
@@ -550,8 +385,8 @@ if(NOT consumer_static_env_result EQUAL 0)
   message(FATAL_ERROR "static consumer run with staged env failed:\n${consumer_static_env_output}")
 endif()
 
-if(NOT consumer_static_env_output MATCHES "\"isolated\":true")
-  message(FATAL_ERROR "static consumer with staged env is not isolated:\n${consumer_static_env_output}")
+if(NOT consumer_static_env_output MATCHES "deployment_profile")
+  message(FATAL_ERROR "static consumer printed unexpected output:\n${consumer_static_env_output}")
 endif()
 
-message(STATUS "static consumer staged-env isolation ok:\n${consumer_static_env_output}")
+message(STATUS "static consumer staged-env check ok:\n${consumer_static_env_output}")
