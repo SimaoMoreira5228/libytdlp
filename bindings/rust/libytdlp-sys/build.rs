@@ -59,6 +59,39 @@ fn python_link() {
     }
 }
 
+fn dir_has_lib(dir: &std::path::Path) -> bool {
+    let names: &[&str] = if env::var("CARGO_CFG_WINDOWS").is_ok() {
+        &["ytdlp.lib", "ytdlp_static.lib"]
+    } else {
+        &["libytdlp.a", "libytdlp.so", "libytdlp.dylib"]
+    };
+
+    names.iter().any(|name| dir.join(name).exists())
+}
+
+fn dev_tree_dir() -> Option<PathBuf> {
+    if let Some(dir) = env::var_os("BUILD_DIR") {
+        let dir = PathBuf::from(dir);
+
+        if dir_has_lib(&dir) {
+            return Some(dir);
+        }
+    }
+
+    if let Ok(manifest) = env::var("CARGO_MANIFEST_DIR") {
+        let dir = PathBuf::from(manifest)
+            .ancestors()
+            .nth(3)
+            .map(|root| root.join("build"))
+            .filter(|dir| dir_has_lib(dir));
+
+        if dir.is_some() {
+            return dir;
+        }
+    }
+
+    None
+}
 fn system_lib_dir() -> Option<PathBuf> {
     if env::var("CARGO_CFG_WINDOWS").is_ok() {
         let path = env::var_os("PATH")?;
@@ -96,6 +129,7 @@ fn system_lib_dir() -> Option<PathBuf> {
 
 fn main() {
     println!("cargo:rerun-if-env-changed=LIBYTDLP_LIB_DIR");
+    println!("cargo:rerun-if-env-changed=BUILD_DIR");
     println!("cargo:rerun-if-env-changed=LIBYTDLP_LINK");
     println!("cargo:rerun-if-env-changed=LIBYTDLP_PYTHON");
 
@@ -108,15 +142,21 @@ fn main() {
     let link_name = "ytdlp";
     let static_link_name = if windows { "ytdlp_static" } else { "ytdlp" };
 
-    let dir = env::var("LIBYTDLP_LIB_DIR")
-        .ok()
-        .map(PathBuf::from)
-        .or_else(system_lib_dir);
+    let dir = match env::var("LIBYTDLP_LIB_DIR").ok().map(PathBuf::from) {
+        Some(dir) if dir_has_lib(&dir) => Some(dir),
+        Some(dir) => panic!(
+            "LIBYTDLP_LIB_DIR holds {} but no built library is in it",
+            dir.display()
+        ),
+        None => dev_tree_dir().or_else(system_lib_dir),
+    };
 
     let Some(dir) = dir else {
         panic!(
-            "libytdlp native library not found: install it system-wide \
-             or set LIBYTDLP_LIB_DIR to the directory holding libytdlp.so, libytdlp.a \
+            "libytdlp native library not found: build the repo first (cargo finds \
+             <root>/build by itself) or install it system-wide (/usr/lib, /usr/lib64, \
+             /usr/local/lib, /usr/local/lib64), or set LIBYTDLP_LIB_DIR to the \
+             directory holding libytdlp.so, libytdlp.a \
              (ytdlp.lib or ytdlp_static.lib on Windows)"
         );
     };
