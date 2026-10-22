@@ -27,6 +27,11 @@ is Apache-2.0 (see LICENSE). Nothing below is relicensed by us.
   Every profile uses an external executable found on `PATH` or passed
   per context. Keep FFmpeg out of artifact SBOMs; it may appear in a
   separate external-dependency manifest.
+- `cmake --install` puts `LICENSE`, `NOTICE`, and this file under
+  `<prefix>/share/doc/libytdlp`, and writes a generated `sbom.json`
+  next to the bridge under `<prefix>/share/libytdlp`. The install-time
+  SBOM comes from the pinned sources and refuses to list FFmpeg, same
+  as the checked-in tooling.
 - `mutagen` (GPL-2.0-or-later per yt-dlp's dependency listing) ships
   in no default bundle. Features that need it get a system/optional
   package plus a documented gap, not a silent downgrade.

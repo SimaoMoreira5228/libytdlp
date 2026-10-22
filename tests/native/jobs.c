@@ -241,8 +241,11 @@ static void check_job_cancel(void) {
     char dir[256];
     make_tmpdir(dir, sizeof(dir));
 
+    // NOTE: proxy "" pins loopback fixtures to a direct connection. Scrubbing
+    // environ here would not work: CPython snapshots os.environ at startup and
+    // ignores later raw setenv/unsetenv calls.
     char options[512];
-    snprintf(options, sizeof(options), "{\"outtmpl\": \"%s/big.bin\"}", dir);
+    snprintf(options, sizeof(options), "{\"outtmpl\": \"%s/big.bin\", \"proxy\": \"\"}", dir);
 
     ly_context* context = NULL;
     assert(ly_context_create(options, strlen(options), &context, NULL) == LY_OK);
@@ -322,7 +325,7 @@ static void check_job_download_success(void) {
     snprintf(target, sizeof(target), "%s/out.bin", dir);
 
     char options[512];
-    snprintf(options, sizeof(options), "{\"outtmpl\": \"%s\"}", target);
+    snprintf(options, sizeof(options), "{\"outtmpl\": \"%s\", \"proxy\": \"\"}", target);
 
     ly_context* context = NULL;
     assert(ly_context_create(options, strlen(options), &context, NULL) == LY_OK);
@@ -377,7 +380,7 @@ static void check_job_release_joins(void) {
     make_tmpdir(dir, sizeof(dir));
 
     char options[512];
-    snprintf(options, sizeof(options), "{\"outtmpl\": \"%s/out.bin\"}", dir);
+    snprintf(options, sizeof(options), "{\"outtmpl\": \"%s/out.bin\", \"proxy\": \"\"}", dir);
 
     ly_context* context = NULL;
     assert(ly_context_create(options, strlen(options), &context, NULL) == LY_OK);
@@ -459,7 +462,12 @@ static void check_job_per_download_override(void) {
     make_tmpdir(dir_b, sizeof(dir_b));
 
     char context_options[512];
-    snprintf(context_options, sizeof(context_options), "{\"outtmpl\": \"%s/ctx.bin\"}", dir_a);
+    snprintf(
+        context_options,
+        sizeof(context_options),
+        "{\"outtmpl\": \"%s/ctx.bin\", \"proxy\": \"\"}",
+        dir_a
+    );
 
     char job_options[512];
     snprintf(job_options, sizeof(job_options), "{\"outtmpl\": \"%s/job.bin\"}", dir_b);
@@ -521,7 +529,12 @@ static void check_job_download_restricted(void) {
     snprintf(target, sizeof(target), "%s/ok.bin", dir);
 
     char context_options[512];
-    snprintf(context_options, sizeof(context_options), "{\"outtmpl\": \"%s\"}", target);
+    snprintf(
+        context_options,
+        sizeof(context_options),
+        "{\"outtmpl\": \"%s\", \"proxy\": \"\"}",
+        target
+    );
 
     char job_options[512];
     snprintf(job_options, sizeof(job_options), "{\"libytdlp\": {\"restrict_to\": \"%s\"}}", dir);
@@ -682,11 +695,6 @@ static int closed_loopback_port(void) {
 #endif
 
 static void check_job_closed_port_network(void) {
-    char* saved[PROXY_SCRUB_COUNT];
-    char* saved_lower = NULL;
-    char* saved_upper = NULL;
-    scrub_proxy_env(saved, &saved_lower, &saved_upper);
-
     int port = closed_loopback_port();
 
     ly_context* context = NULL;
@@ -737,8 +745,6 @@ static void check_job_closed_port_network(void) {
 
     ly_job_release(job);
     assert(ly_context_release(context) == LY_OK);
-
-    restore_proxy_env(saved, saved_lower, saved_upper);
 }
 
 int main(void) {

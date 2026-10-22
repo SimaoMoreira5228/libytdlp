@@ -30,6 +30,14 @@ if(NOT DEFINED LIBYTDLP_PYTHON_LIB)
   message(FATAL_ERROR "LIBYTDLP_PYTHON_LIB is not set")
 endif()
 
+if(NOT DEFINED LIBYTDLP_PYTHON_LIBDIR)
+  message(FATAL_ERROR "LIBYTDLP_PYTHON_LIBDIR is not set")
+endif()
+
+if(NOT DEFINED LIBYTDLP_PROJECT_VERSION)
+  message(FATAL_ERROR "LIBYTDLP_PROJECT_VERSION is not set")
+endif()
+
 if(IS_ABSOLUTE "${LIBYTDLP_INSTALL_LIBDIR}")
   set(staged_libdir "${LIBYTDLP_INSTALL_LIBDIR}")
 else()
@@ -87,6 +95,56 @@ if(NOT EXISTS "${staged_libdir}/cmake/libytdlp/libytdlp-config-version.cmake")
   message(FATAL_ERROR "staged CMake package version not found under ${staged_libdir}")
 endif()
 
+file(GLOB staged_static "${staged_libdir}/libytdlp.a")
+
+if(NOT staged_static)
+  message(FATAL_ERROR "staged static archive not found under ${staged_libdir}")
+endif()
+
+if(NOT EXISTS "${LIBYTDLP_INSTALL_PREFIX}/share/libytdlp/python/libytdlp_bridge/__init__.py")
+  message(FATAL_ERROR "staged python bridge not found under ${LIBYTDLP_INSTALL_PREFIX}/share/libytdlp")
+endif()
+
+if(NOT EXISTS "${LIBYTDLP_INSTALL_PREFIX}/share/libytdlp/yt-dlp/yt_dlp/__init__.py")
+  message(FATAL_ERROR "staged yt-dlp sources not found under ${LIBYTDLP_INSTALL_PREFIX}/share/libytdlp")
+endif()
+
+foreach(staged_doc LICENSE NOTICE THIRD_PARTY_NOTICES.md)
+  if(NOT EXISTS "${LIBYTDLP_INSTALL_PREFIX}/share/doc/libytdlp/${staged_doc}")
+    message(FATAL_ERROR "staged ${staged_doc} not found under ${LIBYTDLP_INSTALL_PREFIX}/share/doc/libytdlp")
+  endif()
+endforeach()
+
+set(staged_sbom "${LIBYTDLP_INSTALL_PREFIX}/share/libytdlp/sbom.json")
+
+if(NOT EXISTS "${staged_sbom}")
+  message(FATAL_ERROR "staged SBOM not found at ${staged_sbom}")
+endif()
+
+execute_process(
+  COMMAND "${LIBYTDLP_TEST_PYTHON}" "${LIBYTDLP_SOURCE_DIR}/cmake/install_verify_sbom.py"
+    "${staged_sbom}" "${LIBYTDLP_PROJECT_VERSION}"
+  RESULT_VARIABLE sbom_check_result
+  OUTPUT_VARIABLE sbom_check_output
+  ERROR_VARIABLE sbom_check_output
+)
+
+if(NOT sbom_check_result EQUAL 0)
+  message(FATAL_ERROR "staged SBOM check failed:\n${sbom_check_output}")
+endif()
+
+file(GLOB_RECURSE staged_ffmpeg
+  "${LIBYTDLP_INSTALL_PREFIX}/ffmpeg"
+  "${LIBYTDLP_INSTALL_PREFIX}/ffmpeg.exe"
+  "${LIBYTDLP_INSTALL_PREFIX}/ffprobe"
+  "${LIBYTDLP_INSTALL_PREFIX}/ffprobe.exe"
+  "${LIBYTDLP_INSTALL_PREFIX}/libav*"
+)
+
+if(staged_ffmpeg)
+  message(FATAL_ERROR "staged FFmpeg artifacts must not ship: ${staged_ffmpeg}")
+endif()
+
 execute_process(
   COMMAND "${LIBYTDLP_C_COMPILER}"
     "${LIBYTDLP_SOURCE_DIR}/tests/native/smoke.c"
@@ -97,6 +155,7 @@ execute_process(
     "-lytdlp"
     ${LIBYTDLP_PYTHON_LIB}
     "-Wl,-rpath,${staged_libdir}"
+    "-Wl,-rpath,${LIBYTDLP_PYTHON_LIBDIR}"
     "-DLIBYTDLP_TEST_PYTHON=\"${LIBYTDLP_TEST_PYTHON}\""
     "-DLIBYTDLP_SLOW_SERVER=\"${LIBYTDLP_SLOW_SERVER}\""
     "-pthread"
@@ -155,16 +214,46 @@ project(ly_consumer C)
 find_package(libytdlp REQUIRED)
 add_executable(consumer main.c)
 target_link_libraries(consumer PRIVATE libytdlp::ytdlp)
+add_executable(consumer_static main.c)
+target_link_libraries(consumer_static PRIVATE libytdlp::ytdlp_static)
 ]=])
 
 file(WRITE "${consumer_src}/main.c" [=[
 #include <stdio.h>
+#include <string.h>
 #include <libytdlp/libytdlp.h>
 
 int main(void) {
     unsigned version = (unsigned)ly_abi_version();
 
     printf("%u\n", version);
+
+    ly_result* info = NULL;
+    ly_error* error = NULL;
+
+    if (ly_version_info(&info, &error) != LY_OK) {
+        fprintf(stderr, "version info failed: %s\n", error ? ly_error_message(error) : "no detail");
+        ly_error_release(error);
+        return 1;
+    }
+
+    const char* data = NULL;
+    size_t len = 0;
+
+    if (ly_result_json(info, &data, &len) != LY_OK || data == NULL) {
+        fprintf(stderr, "version json failed\n");
+        ly_result_release(info);
+        return 1;
+    }
+
+    if (strstr(data, "deployment_profile") == NULL) {
+        fprintf(stderr, "version json has no deployment profile: %.*s\n", (int)len, data);
+        ly_result_release(info);
+        return 1;
+    }
+
+    printf("%.*s\n", (int)len, data);
+    ly_result_release(info);
 
     return 0;
 }
@@ -211,20 +300,34 @@ endif()
 
 list(GET consumer_candidates 0 consumer_binary)
 
-execute_process(
-  COMMAND "${consumer_binary}"
-  RESULT_VARIABLE consumer_run_result
-  OUTPUT_VARIABLE consumer_run_output
-  ERROR_VARIABLE consumer_run_output
-  OUTPUT_STRIP_TRAILING_WHITESPACE
-)
+file(GLOB_RECURSE consumer_static_candidates "${consumer_build}/consumer_static${CMAKE_EXECUTABLE_SUFFIX}")
 
-if(NOT consumer_run_result EQUAL 0)
-  message(FATAL_ERROR "consumer run failed:\n${consumer_run_output}")
+list(LENGTH consumer_static_candidates consumer_static_candidate_count)
+
+if(NOT consumer_static_candidate_count GREATER 0)
+  message(FATAL_ERROR "static consumer binary not found under ${consumer_build}")
 endif()
 
-if(NOT consumer_run_output MATCHES "^[0-9]+$")
-  message(FATAL_ERROR "consumer printed unexpected abi: ${consumer_run_output}")
-endif()
+list(GET consumer_static_candidates 0 consumer_static_binary)
 
-message(STATUS "consumer find_package check ok: abi ${consumer_run_output}")
+foreach(consumer_target "${consumer_binary}" "${consumer_static_binary}")
+  execute_process(
+    COMMAND "${CMAKE_COMMAND}" -E env
+      --unset=LIBYTDLP_BRIDGE_DIR
+      --unset=LIBYTDLP_YTDLP_DIR
+      "${consumer_target}"
+    RESULT_VARIABLE consumer_run_result
+    OUTPUT_VARIABLE consumer_run_output
+    ERROR_VARIABLE consumer_run_output
+  )
+
+  if(NOT consumer_run_result EQUAL 0)
+    message(FATAL_ERROR "consumer run failed:\n${consumer_run_output}")
+  endif()
+
+  if(NOT consumer_run_output MATCHES "^[0-9]+\n.*deployment_profile")
+    message(FATAL_ERROR "consumer printed unexpected output: ${consumer_run_output}")
+  endif()
+
+  message(STATUS "consumer find_package check ok (${consumer_target}):\n${consumer_run_output}")
+endforeach()

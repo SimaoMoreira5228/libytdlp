@@ -313,6 +313,23 @@ def format_urls(info):
 
 
 def check_cli_library_parity():
+    # NOTE: loopback fixture must bypass any ambient proxy; stash and restore
+    # the proxy env around the fixture and the CLI children that inherit it.
+    scrubbed = {}
+    for name in (
+        "http_proxy",
+        "https_proxy",
+        "all_proxy",
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "ALL_PROXY",
+        "no_proxy",
+        "NO_PROXY",
+    ):
+        scrubbed[name] = os.environ.pop(name, None)
+    os.environ["no_proxy"] = "*"
+    os.environ["NO_PROXY"] = "*"
+
     server, port = start_fixture_server(65536, 8000000)
 
     try:
@@ -350,6 +367,12 @@ def check_cli_library_parity():
         print("cli/library parity ok")
     finally:
         stop_fixture_server(server)
+
+        for name, value in scrubbed.items():
+            if value is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = value
 
 
 def check_find_executables():

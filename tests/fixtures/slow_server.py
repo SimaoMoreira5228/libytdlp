@@ -1,9 +1,20 @@
 import sys
 import time
+import socketserver
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 PAYLOAD = b""
 RATE = 0
+
+
+class _Server(HTTPServer):
+    # NOTE: HTTPServer.server_bind calls socket.getfqdn, which stalls ~35s
+    # per spawn on machines without a localhost reverse-DNS entry. The
+    # server name only feeds response headers here, so bind it directly.
+    def server_bind(self):
+        socketserver.TCPServer.server_bind(self)
+        self.server_name = self.server_address[0]
+        self.server_port = self.server_address[1]
 
 
 class _Handler(BaseHTTPRequestHandler):
@@ -80,7 +91,7 @@ def main(argv):
     PAYLOAD = bytes((i % 251 for i in range(size)))
     RATE = int(argv[3])
 
-    server = HTTPServer(("127.0.0.1", port), _Handler)
+    server = _Server(("127.0.0.1", port), _Handler)
     print(f"PORT {server.server_port}", flush=True)
     server.serve_forever()
     return 0

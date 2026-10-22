@@ -291,6 +291,10 @@ fn youtube_player_client_reaches_youtube_dl() {
     let url = server.url("/file.bin");
 
     let client = Client::builder()
+        // NOTE: force direct connections so the loopback fixture ignores any
+        // ambient proxy env; env scrubbing would race across parallel tests.
+        .options_json("{\"proxy\": \"\"}")
+        .expect("direct proxy options must merge")
         .youtube_player_client(PlayerClient::Ios)
         .build()
         .expect("builder must succeed");
@@ -301,7 +305,7 @@ fn youtube_player_client_reaches_youtube_dl() {
 
     assert_eq!(info.id(), Some("file"));
 
-    let plain = Client::new("{}").expect("default options must be accepted");
+    let plain = Client::new("{\"proxy\": \"\"}").expect("default options must be accepted");
     let per_call = player_client_options([PlayerClient::Ios]);
 
     assert_eq!(per_call.len(), 1);
@@ -321,7 +325,12 @@ fn extract_first_retries_then_succeeds() {
     let client = Client::new("{}").expect("default options must be accepted");
 
     let info = client
-        .extract_first(&url, vec!["{not json}".to_owned(), "{}".to_owned()])
+        // NOTE: proxy "" forces a direct connection so the loopback fixture
+        // ignores any ambient proxy env.
+        .extract_first(
+            &url,
+            vec!["{not json}".to_owned(), "{\"proxy\": \"\"}".to_owned()],
+        )
         .expect("second options must succeed");
 
     assert_eq!(info.id(), Some("file"));
@@ -381,7 +390,9 @@ fn extract_with_options_merges_over_context() {
     let url = server.url("/file.bin");
 
     let client = ClientBuilder::new()
-        .options_json(r#"{"skip_download": true}"#)
+        // NOTE: proxy "" forces a direct connection so the loopback fixture
+        // ignores any ambient proxy env.
+        .options_json(r#"{"skip_download": true, "proxy": ""}"#)
         .expect("context options must merge")
         .build()
         .expect("builder must succeed");
@@ -401,7 +412,7 @@ fn extract_with_options_merges_over_context() {
 
     assert_eq!(info.id(), Some("file"));
 
-    let plain = Client::new("{}").expect("default options must be accepted");
+    let plain = Client::new("{\"proxy\": \"\"}").expect("default options must be accepted");
     let info = plain.extract(&url).expect("context extract must work");
 
     assert_eq!(info.id(), Some("file"));

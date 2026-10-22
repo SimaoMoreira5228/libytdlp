@@ -138,7 +138,9 @@ fn slow_download_cancels() {
 
     let client = Client::new(&options).expect("options must be accepted");
     let job = client
-        .download(&server.url("/big.bin"), "{}")
+        // NOTE: force direct connections so the loopback fixture ignores any
+        // ambient proxy env; env scrubbing would race across parallel tests.
+        .download(&server.url("/big.bin"), "{\"proxy\": \"\"}")
         .expect("job must start");
 
     let state = wait_for_state(&job, JobState::Running, Duration::from_secs(10));
@@ -179,7 +181,9 @@ fn fast_download_completes() {
 
     let client = Client::new(&options).expect("options must be accepted");
     let job = client
-        .download(&server.url("/file.bin"), "{}")
+        // NOTE: force direct connections so the loopback fixture ignores any
+        // ambient proxy env; env scrubbing would race across parallel tests.
+        .download(&server.url("/file.bin"), "{\"proxy\": \"\"}")
         .expect("job must start");
 
     let info = job.wait().expect("fast download must succeed");
@@ -217,8 +221,10 @@ fn per_download_options_override_context() {
     std::fs::create_dir_all(&dir_a).expect("context dir must be created");
     std::fs::create_dir_all(&dir_b).expect("job dir must be created");
 
+    // NOTE: proxy "" forces direct connections so the loopback fixture ignores
+    // any ambient proxy env; env scrubbing would race across parallel tests.
     let context_options = format!(
-        "{{\"outtmpl\": \"{}\"}}",
+        "{{\"outtmpl\": \"{}\", \"proxy\": \"\"}}",
         dir_a
             .join("ctx.bin")
             .to_string_lossy()
@@ -263,7 +269,9 @@ fn release_joins_running_job() {
 
     let client = Client::new(&options).expect("options must be accepted");
     let job = client
-        .download(&server.url("/file.bin"), "{}")
+        // NOTE: force direct connections so the loopback fixture ignores any
+        // ambient proxy env; env scrubbing would race across parallel tests.
+        .download(&server.url("/file.bin"), "{\"proxy\": \"\"}")
         .expect("job must start");
 
     drop(job);
@@ -284,7 +292,7 @@ fn closed_port() -> u16 {
 }
 
 #[test]
-fn closed_port_download_fails_as_non_retryable_network_error() {
+fn closed_port_download_fails_as_retryable_network_error() {
     let scrubbed = [
         "http_proxy",
         "https_proxy",
