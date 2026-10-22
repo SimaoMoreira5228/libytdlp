@@ -15,6 +15,7 @@ class Runtime {
 
     bool ensure(const char* bridge_dir, const char* ytdlp_dir, std::string& error);
     bool host_owned() const;
+    bool bridge_embedded() const;
     std::mutex& serial();
 
   private:
@@ -24,6 +25,7 @@ class Runtime {
     std::mutex serial_;
     bool ready_ = false;
     bool host_owned_ = false;
+    bool bridge_embedded_ = false;
 };
 
 } // namespace libytdlp

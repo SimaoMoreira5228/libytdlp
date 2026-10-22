@@ -6,11 +6,31 @@
 #include <string>
 #include <vector>
 
+#include "bridge_embedded.hpp"
 #include "py_handle.hpp"
 #include "runtime.hpp"
 
 namespace libytdlp {
 namespace {
+
+OwnedPyRef import_bridge_module(const char* name) {
+    OwnedPyRef module(PyImport_ImportModule(name));
+
+    if (module || !Runtime::instance().bridge_embedded()) {
+        return module;
+    }
+
+    PyErr_Clear();
+
+    std::string error;
+
+    if (!boot_embedded_bridge(error)) {
+        PyErr_SetString(PyExc_ImportError, error.c_str());
+        return OwnedPyRef();
+    }
+
+    return OwnedPyRef(PyImport_ImportModule(name));
+}
 
 const char* kNetworkClasses[] = {
     "URLError",
@@ -244,7 +264,7 @@ BridgeResult call_bridge(
         return out;
     }
 
-    OwnedPyRef module(PyImport_ImportModule("libytdlp_bridge.extract"));
+    OwnedPyRef module(import_bridge_module("libytdlp_bridge.extract"));
     if (!module) {
         out.message = "could not import libytdlp_bridge.extract: " + python_error_text();
         return out;
@@ -328,7 +348,7 @@ BridgeResult call_download(
         return out;
     }
 
-    OwnedPyRef module(PyImport_ImportModule("libytdlp_bridge.download"));
+    OwnedPyRef module(import_bridge_module("libytdlp_bridge.download"));
     if (!module) {
         out.message = "could not import libytdlp_bridge.download: " + python_error_text();
         return out;
@@ -405,7 +425,7 @@ BridgeResult runtime_info_json(
         return out;
     }
 
-    OwnedPyRef module(PyImport_ImportModule("libytdlp_bridge.extract"));
+    OwnedPyRef module(import_bridge_module("libytdlp_bridge.extract"));
     if (!module) {
         out.message = "could not import libytdlp_bridge.extract: " + python_error_text();
         return out;

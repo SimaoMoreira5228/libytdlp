@@ -84,6 +84,7 @@ configure_file(
 add_library(ytdlp SHARED
     native/api.cpp
     native/bridge.cpp
+    native/bridge_embedded.cpp
     native/install_dirs.cpp
     native/jobs.cpp
     native/runtime.cpp
@@ -93,13 +94,38 @@ add_library(libytdlp::ytdlp ALIAS ytdlp)
 add_library(ytdlp_static STATIC
     native/api.cpp
     native/bridge.cpp
+    native/bridge_embedded.cpp
     native/install_dirs.cpp
     native/jobs.cpp
     native/runtime.cpp
 )
 add_library(libytdlp::ytdlp_static ALIAS ytdlp_static)
 
+set(LIBYTDLP_BRIDGE_SOURCES
+    ${CMAKE_CURRENT_SOURCE_DIR}/python/libytdlp_bridge/options.py
+    ${CMAKE_CURRENT_SOURCE_DIR}/python/libytdlp_bridge/serialize.py
+    ${CMAKE_CURRENT_SOURCE_DIR}/python/libytdlp_bridge/extract.py
+    ${CMAKE_CURRENT_SOURCE_DIR}/python/libytdlp_bridge/download.py
+    ${CMAKE_CURRENT_SOURCE_DIR}/python/libytdlp_bridge/__init__.py
+)
+
+add_custom_command(
+    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/generated/bridge_sources.h
+    COMMAND ${Python_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/embed_bridge.py
+        ${CMAKE_CURRENT_BINARY_DIR}/generated/bridge_sources.h
+        ${LIBYTDLP_BRIDGE_SOURCES}
+    DEPENDS ${LIBYTDLP_BRIDGE_SOURCES} ${CMAKE_CURRENT_SOURCE_DIR}/tools/embed_bridge.py
+    COMMENT "Embedding the Python bridge for file-less runtimes"
+    VERBATIM
+)
+
+add_custom_target(libytdlp_bridge_sources
+    DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/generated/bridge_sources.h
+)
+
 foreach(target ytdlp ytdlp_static)
+    add_dependencies(${target} libytdlp_bridge_sources)
+
     target_include_directories(${target}
         PUBLIC
             $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -107,6 +133,7 @@ foreach(target ytdlp ytdlp_static)
             $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
         PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}/native
+            ${CMAKE_CURRENT_BINARY_DIR}/generated
     )
     target_compile_definitions(${target} PRIVATE
         LIBYTDLP_BRIDGE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/python"

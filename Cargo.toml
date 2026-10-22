@@ -20,6 +20,7 @@ include = [
     "/CMakeLists.txt",
     "/VERSION",
     "cmake/install_sbom.cmake.in",
+    "tools/embed_bridge.py",
     "bindings/rust/libytdlp-sys/build.rs",
     "bindings/rust/libytdlp-sys/src/lib.rs",
     "/LICENSE",

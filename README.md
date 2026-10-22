@@ -223,6 +223,25 @@ Options are a JSON string passed straight to `YoutubeDL`, same as the C API. Off
 
 CMake can build the crates as part of the unified build with `-DLIBYTDLP_BUILD_RUST=ON` (pinned Corrosion). Off by default. Plain `cargo build` never needs CMake or Corrosion.
 
+## Containers
+
+The bridge travels inside the library, so multi-stage images only need three things in the runner: the binary, a Python interpreter, and a `yt-dlp` package. No registry surgery, no path exports:
+
+```dockerfile
+FROM rust:bookworm AS builder
+RUN apt-get update && apt-get install -y cmake g++ python3-dev && rm -rf /var/lib/apt/lists/*
+COPY . .
+RUN cargo build --release --bin myapp
+
+FROM debian:bookworm-slim
+RUN apt-get update && apt-get install -y python3 libpython3.11 ffmpeg \
+    && pip install --break-system-packages yt-dlp==2026.10.21 && rm -rf /var/lib/apt/lists/*
+COPY --from=builder /build/target/release/myapp /app/myapp
+ENTRYPOINT ["/app/myapp"]
+```
+
+`yt-dlp` comes from PyPI at the pinned version (`COMPATIBILITY.md` records the current pin). The adapter imports it from `site-packages` on its own; the copy baked into the library only runs when no bridge files sit next to it, so installed trees and dev checkouts behave exactly as before.
+
 ## Resolve example
 
 `examples/resolve` is the whole flow in one binary: extract a URL, pick the best audio-only stream, print it.

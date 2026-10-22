@@ -64,6 +64,27 @@ bool Runtime::host_owned() const {
     return host_owned_;
 }
 
+bool Runtime::bridge_embedded() const {
+    std::lock_guard<std::mutex> init(mutex_);
+    return bridge_embedded_;
+}
+
+namespace {
+
+bool has_bridge_package(const char* dir) {
+    if (dir == nullptr || dir[0] == '\0') {
+        return false;
+    }
+
+    std::error_code code;
+    return std::filesystem::exists(
+        std::filesystem::path(dir) / "libytdlp_bridge" / "__init__.py",
+        code
+    );
+}
+
+} // namespace
+
 bool Runtime::ensure(const char* bridge_dir, const char* ytdlp_dir, std::string& error) {
     std::lock_guard<std::mutex> call(serial_);
     std::lock_guard<std::mutex> init(mutex_);
@@ -89,6 +110,7 @@ bool Runtime::ensure(const char* bridge_dir, const char* ytdlp_dir, std::string&
     }
 
     host_owned_ = !owned;
+    bridge_embedded_ = !has_bridge_package(bridge_dir);
     ready_ = true;
     return true;
 }

@@ -56,6 +56,8 @@ fn python_link() {
         println!("cargo:rustc-link-search=native={libdir}");
         println!("cargo:rustc-link-lib={lib}");
         println!("cargo:rustc-link-arg=-Wl,-rpath,{libdir}");
+        println!("cargo:python_libdir={libdir}");
+        println!("cargo:python_lib={lib}");
     }
 }
 
@@ -96,10 +98,14 @@ fn collect_sources(dir: &std::path::Path, out: &mut Vec<PathBuf>) {
 }
 
 fn native_sources(root: &std::path::Path) -> Vec<PathBuf> {
-    let mut sources = vec![root.join("CMakeLists.txt")];
+    let mut sources = vec![
+        root.join("CMakeLists.txt"),
+        root.join("tools/embed_bridge.py"),
+    ];
 
     collect_sources(&root.join("native"), &mut sources);
     collect_sources(&root.join("include"), &mut sources);
+    collect_sources(&root.join("python/libytdlp_bridge"), &mut sources);
 
     for source in &sources {
         println!("cargo:rerun-if-changed={}", source.display());
