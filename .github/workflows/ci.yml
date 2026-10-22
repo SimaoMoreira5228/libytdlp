@@ -198,8 +198,26 @@ jobs:
         run: cmake -S . -B build -G Ninja -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
       - name: Build
         run: cmake --build build --parallel
+      - name: Probe fixture speed
+        run: |
+          echo "--- python startup ---"
+          time python3 -c "pass"
+          echo "--- fixture spawn + download ---"
+          python3 tests/fixtures/slow_server.py 0 65536 8000000 > /tmp/probe_port.txt 2>&1 &
+          SERVER_PID=$!
+          for i in $(seq 1 60); do
+            if grep -q PORT /tmp/probe_port.txt 2>/dev/null; then
+              break
+            fi
+            sleep 1
+          done
+          cat /tmp/probe_port.txt
+          PORT=$(awk '{print $2}' /tmp/probe_port.txt)
+          time curl -s -o /tmp/probe_out.bin "http://127.0.0.1:${PORT}/file.bin"
+          ls -l /tmp/probe_out.bin
+          kill $SERVER_PID
       - name: Test
-        run: ctest --test-dir build --output-on-failure --timeout 300
+        run: ctest --test-dir build --output-on-failure --timeout 300 -V -R "smoke|jobs"
       - name: Rust tests
         working-directory: bindings/rust
         env:
