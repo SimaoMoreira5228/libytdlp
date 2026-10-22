@@ -131,6 +131,7 @@ fn runtime_info_reports_diagnostics() {
     let info = runtime_info().expect("runtime info must succeed");
 
     assert_eq!(info.abi(), abi_version());
+    assert_eq!(info.abi(), libytdlp_sys::LY_ABI_VERSION);
     assert_eq!(info.backend(), "embedded");
     assert!(!info.profile().is_empty());
     assert!(!info.python().is_empty());

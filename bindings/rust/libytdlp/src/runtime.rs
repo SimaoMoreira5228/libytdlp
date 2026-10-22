@@ -78,6 +78,22 @@ pub fn abi_version() -> u32 {
     unsafe { sys::ly_abi_version() }
 }
 
+pub(crate) fn ensure_compatible_abi() -> Result<(), Error> {
+    let linked = abi_version();
+
+    if linked != sys::LY_ABI_VERSION {
+        return Err(Error::new(
+            Kind::Internal,
+            format!(
+                "native libytdlp ABI {linked} does not match bindings ABI {}",
+                sys::LY_ABI_VERSION,
+            ),
+        ));
+    }
+
+    Ok(())
+}
+
 #[tracing::instrument(name = "libytdlp.runtime_info", level = "debug")]
 pub fn runtime_info() -> Result<RuntimeInfo, Error> {
     let mut result: *mut sys::LyResult = ptr::null_mut();

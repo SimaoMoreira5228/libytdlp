@@ -23,6 +23,8 @@ pub const LY_E_CANCELLED: c_uint = 5;
 pub const LY_E_BUSY: c_uint = 6;
 pub const LY_E_INTERNAL: c_uint = 7;
 
+pub const LY_ABI_VERSION: u32 = 1;
+
 unsafe extern "C" {
     pub fn ly_abi_version() -> u32;
 

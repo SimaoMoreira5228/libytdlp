@@ -149,6 +149,8 @@ impl Default for ClientBuilder {
 
 impl Client {
     pub fn new(options_json: &str) -> Result<Self, Error> {
+        crate::runtime::ensure_compatible_abi()?;
+
         let mut context: *mut sys::LyContext = ptr::null_mut();
         let mut error: *mut sys::LyError = ptr::null_mut();
 
@@ -384,6 +386,8 @@ impl Future for WaitForExtract {
 }
 
 fn isolated_extract(url: String, options: String) -> Result<MediaInfo, Error> {
+    crate::runtime::ensure_compatible_abi()?;
+
     let mut context: *mut sys::LyContext = ptr::null_mut();
     let mut error: *mut sys::LyError = ptr::null_mut();
 
