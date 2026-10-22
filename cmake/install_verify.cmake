@@ -502,3 +502,23 @@ foreach(consumer_target "${consumer_binary}" "${consumer_static_binary}")
 
   message(STATUS "consumer find_package check ok (${consumer_target}):\n${consumer_run_output}")
 endforeach()
+
+execute_process(
+  COMMAND "${CMAKE_COMMAND}" -E env
+    "LIBYTDLP_BRIDGE_DIR=${LIBYTDLP_INSTALL_PREFIX}/share/libytdlp/python"
+    "LIBYTDLP_YTDLP_DIR=${LIBYTDLP_INSTALL_PREFIX}/share/libytdlp/yt-dlp"
+    "${consumer_static_binary}"
+  RESULT_VARIABLE consumer_static_env_result
+  OUTPUT_VARIABLE consumer_static_env_output
+  ERROR_VARIABLE consumer_static_env_output
+)
+
+if(NOT consumer_static_env_result EQUAL 0)
+  message(FATAL_ERROR "static consumer run with staged env failed:\n${consumer_static_env_output}")
+endif()
+
+if(NOT consumer_static_env_output MATCHES "\"isolated\":true")
+  message(FATAL_ERROR "static consumer with staged env is not isolated:\n${consumer_static_env_output}")
+endif()
+
+message(STATUS "static consumer staged-env isolation ok:\n${consumer_static_env_output}")

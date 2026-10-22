@@ -72,14 +72,12 @@ bool append_config_path(PyConfig& config, const char* dir, std::string& error) {
     return true;
 }
 
-bool init_isolated(const char* bridge_dir, const char* ytdlp_dir, std::string& error) {
-    std::string stdlib = staged_stdlib_dir();
-
-    if (stdlib.empty()) {
-        error = "staged stdlib is missing";
-        return false;
-    }
-
+bool init_isolated(
+    const char* bridge_dir,
+    const char* ytdlp_dir,
+    const std::string& stdlib,
+    std::string& error
+) {
     PyConfig config;
     PyConfig_InitIsolatedConfig(&config);
 
@@ -147,14 +145,22 @@ bool Runtime::ensure(const char* bridge_dir, const char* ytdlp_dir, std::string&
 
     bool owned = Py_IsInitialized() == 0;
 
-    if (owned && has_staged_runtime()) {
-        if (!init_isolated(bridge_dir, ytdlp_dir, error)) {
-            return false;
+    if (owned) {
+        std::string stdlib = staged_stdlib_dir();
+
+        if (stdlib.empty() || !has_staged_runtime()) {
+            stdlib = staged_stdlib_for_dirs(bridge_dir, ytdlp_dir);
         }
 
-        host_owned_ = false;
-        ready_ = true;
-        return true;
+        if (!stdlib.empty()) {
+            if (!init_isolated(bridge_dir, ytdlp_dir, stdlib, error)) {
+                return false;
+            }
+
+            host_owned_ = false;
+            ready_ = true;
+            return true;
+        }
     }
 
     if (owned) {

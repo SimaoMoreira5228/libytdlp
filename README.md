@@ -166,7 +166,7 @@ find_package(libytdlp REQUIRED)
 target_link_libraries(myapp PRIVATE libytdlp::ytdlp)
 ```
 
-Pass `-DCMAKE_PREFIX_PATH=/your/prefix` at configure time when the install isn't on a system path. `libytdlp::ytdlp` is the shared library, `libytdlp::ytdlp_static` is the static one. Both are installed, and the static target carries its Threads, Python, and C++ runtime linkage with it, so plain C projects link it without extra flags. One difference: isolated mode currently kicks in through the shared library only. A static link can't locate the staged tree from the archive, so it runs off ambient Python like before until that path learns otherwise.
+Pass `-DCMAKE_PREFIX_PATH=/your/prefix` at configure time when the install isn't on a system path. `libytdlp::ytdlp` is the shared library, `libytdlp::ytdlp_static` is the static one. Both are installed, and the static target carries its Threads, Python, and C++ runtime linkage with it, so plain C projects link it without extra flags. The shared library finds the staged tree next to itself. A static link has no library path to anchor to, so point it at the tree explicitly and it isolates the same way: `LIBYTDLP_BRIDGE_DIR=<prefix>/share/libytdlp/python` and `LIBYTDLP_YTDLP_DIR=<prefix>/share/libytdlp/yt-dlp`.
 
 ### From Rust
 

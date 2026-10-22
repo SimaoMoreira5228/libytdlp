@@ -23,6 +23,24 @@ void module_anchor() {
 }
 #endif
 
+bool marker_present(const std::filesystem::path& marker) {
+    std::error_code code;
+
+    return std::filesystem::exists(marker, code) && !code;
+}
+
+bool root_is_complete(const std::filesystem::path& root) {
+    if (!marker_present(root / "python-stdlib" / "os.py")) {
+        return false;
+    }
+
+    if (!marker_present(root / "python" / "libytdlp_bridge" / "__init__.py")) {
+        return false;
+    }
+
+    return marker_present(root / "yt-dlp" / "yt_dlp" / "__init__.py");
+}
+
 } // namespace
 
 #if defined(_WIN32)
@@ -188,28 +206,35 @@ bool has_staged_runtime() {
         return false;
     }
 
-    std::filesystem::path root(share);
+    return root_is_complete(std::filesystem::path(share));
+}
 
-    std::error_code code;
-
-    bool stdlib = std::filesystem::exists(root / "python-stdlib" / "os.py", code) && !code;
-
-    if (!stdlib) {
-        return false;
+std::string staged_stdlib_for_dirs(const char* bridge_dir, const char* ytdlp_dir) {
+    if (bridge_dir == nullptr || bridge_dir[0] == '\0') {
+        return std::string();
     }
 
-    code.clear();
-
-    bool bridge =
-        std::filesystem::exists(root / "python" / "libytdlp_bridge" / "__init__.py", code) && !code;
-
-    if (!bridge) {
-        return false;
+    if (ytdlp_dir == nullptr || ytdlp_dir[0] == '\0') {
+        return std::string();
     }
 
-    code.clear();
+    std::filesystem::path bridge(bridge_dir);
 
-    return std::filesystem::exists(root / "yt-dlp" / "yt_dlp" / "__init__.py", code) && !code;
+    if (!marker_present(bridge / "libytdlp_bridge" / "__init__.py")) {
+        return std::string();
+    }
+
+    if (!marker_present(std::filesystem::path(ytdlp_dir) / "yt_dlp" / "__init__.py")) {
+        return std::string();
+    }
+
+    std::filesystem::path root = bridge.parent_path();
+
+    if (!root_is_complete(root)) {
+        return std::string();
+    }
+
+    return (root / "python-stdlib").string();
 }
 
 } // namespace libytdlp
