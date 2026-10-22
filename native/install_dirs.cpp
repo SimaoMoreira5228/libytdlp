@@ -11,6 +11,8 @@
 #include <string>
 #endif
 
+#include <filesystem>
+
 namespace libytdlp {
 namespace {
 
@@ -138,5 +140,76 @@ std::string module_dir() {
 }
 
 #endif
+
+std::string staged_share_dir() {
+    static const std::string cached = [] {
+        std::string self = module_dir();
+
+        if (self.empty()) {
+            return std::string();
+        }
+
+        std::filesystem::path candidate = std::filesystem::path(self) / ".." / "share" / "libytdlp";
+
+        std::filesystem::path marker = candidate / "python" / "libytdlp_bridge" / "__init__.py";
+
+        std::error_code code;
+
+        bool present = std::filesystem::exists(marker, code);
+
+        if (code) {
+            return std::string();
+        }
+
+        if (!present) {
+            return std::string();
+        }
+
+        return candidate.lexically_normal().string();
+    }();
+
+    return cached;
+}
+
+std::string staged_stdlib_dir() {
+    std::string share = staged_share_dir();
+
+    if (share.empty()) {
+        return std::string();
+    }
+
+    return (std::filesystem::path(share) / "python-stdlib").string();
+}
+
+bool has_staged_runtime() {
+    std::string share = staged_share_dir();
+
+    if (share.empty()) {
+        return false;
+    }
+
+    std::filesystem::path root(share);
+
+    std::error_code code;
+
+    bool stdlib = std::filesystem::exists(root / "python-stdlib" / "os.py", code) && !code;
+
+    if (!stdlib) {
+        return false;
+    }
+
+    code.clear();
+
+    bool bridge =
+        std::filesystem::exists(root / "python" / "libytdlp_bridge" / "__init__.py", code) && !code;
+
+    if (!bridge) {
+        return false;
+    }
+
+    code.clear();
+
+    return std::filesystem::exists(root / "yt-dlp" / "yt_dlp" / "__init__.py", code) && !code;
+}
 
 } // namespace libytdlp

@@ -32,33 +32,7 @@ struct LyError {
 };
 
 std::string installed_share_dir() {
-    static const std::string cached = [] {
-        std::string self = libytdlp::module_dir();
-
-        if (self.empty()) {
-            return std::string();
-        }
-
-        std::filesystem::path candidate = std::filesystem::path(self) / ".." / "share" / "libytdlp";
-
-        std::filesystem::path marker = candidate / "python" / "libytdlp_bridge" / "__init__.py";
-
-        std::error_code code;
-
-        bool present = std::filesystem::exists(marker, code);
-
-        if (code) {
-            return std::string();
-        }
-
-        if (!present) {
-            return std::string();
-        }
-
-        return candidate.lexically_normal().string();
-    }();
-
-    return cached;
+    return libytdlp::staged_share_dir();
 }
 
 std::string bridge_dir() {

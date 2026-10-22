@@ -93,6 +93,8 @@ def extractor_names():
 
 
 def runtime_info(profile, ytdlp_commit, abi, host_owned):
+    import sys
+
     versions_info = json.loads(versions())
     versions_info["wrapper"] = BRIDGE_VERSION
     versions_info["backend"] = "embedded"
@@ -100,6 +102,9 @@ def runtime_info(profile, ytdlp_commit, abi, host_owned):
     versions_info["ytdlp_commit"] = ytdlp_commit
     versions_info["abi"] = int(abi)
     versions_info["host_owned"] = bool(host_owned)
+    versions_info["isolated"] = bool(sys.flags.isolated)
+    versions_info["prefix"] = sys.prefix
+    versions_info["sys_path"] = list(sys.path)
     located = find_executables()
     versions_info["ffmpeg"] = located["ffmpeg"]
     versions_info["ffprobe"] = located["ffprobe"]

@@ -186,6 +186,42 @@ install(
     PATTERN "__pycache__" EXCLUDE
     PATTERN "*.pyc" EXCLUDE
 )
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    execute_process(
+        COMMAND ${Python_EXECUTABLE} -c "import sysconfig; print(sysconfig.get_path('stdlib'))"
+        OUTPUT_VARIABLE LIBYTDLP_PYTHON_STDLIB
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET
+    )
+
+    if(LIBYTDLP_PYTHON_STDLIB)
+        message(STATUS "Bundled stdlib source: ${LIBYTDLP_PYTHON_STDLIB}")
+
+        install(
+            DIRECTORY "${LIBYTDLP_PYTHON_STDLIB}/"
+            DESTINATION share/libytdlp/python-stdlib
+            PATTERN "site-packages" EXCLUDE
+            PATTERN "__pycache__" EXCLUDE
+            PATTERN "*.pyc" EXCLUDE
+            PATTERN "*.pyo" EXCLUDE
+            PATTERN "config-*" EXCLUDE
+        )
+
+        configure_file(
+            "${CMAKE_CURRENT_SOURCE_DIR}/cmake/runtime.json.in"
+            "${CMAKE_CURRENT_BINARY_DIR}/generated/runtime.json"
+            @ONLY
+        )
+
+        install(
+            FILES "${CMAKE_CURRENT_BINARY_DIR}/generated/runtime.json"
+            DESTINATION share/libytdlp
+        )
+    else()
+        message(WARNING "Python stdlib not found; bundled runtime will be incomplete")
+    endif()
+endif()
 install(EXPORT libytdlp-targets
     NAMESPACE libytdlp::
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/libytdlp

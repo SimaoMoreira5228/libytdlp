@@ -126,6 +126,8 @@ Three ways to run this, same API in all of them.
 
 Set it at configure time: `cmake -DLIBYTDLP_DEPLOYMENT_PROFILE=BUNDLED_YTDLP_SYSTEM_PYTHON`. Ask the library what it ended up with through `ly_version_info`, or `runtime_info()` in Rust. Same JSON either way.
 
+On Linux, `FULL_BUNDLED` installs go further: the prefix carries its own CPython standard library plus a small record of the exact libpython used, and the library boots Python in isolated mode from those paths. No `PYTHONPATH`, no `PYTHONHOME`, no system site packages. Set every `PYTHON*` var you like, it gets ignored. Windows and macOS don't have this yet. They still run off ambient Python like before.
+
 FFmpeg is never bundled. yt-dlp finds `ffmpeg` on `PATH` like always, or you hand a location to one context through the normal options. A missing FFmpeg only breaks the operations that need it. Nothing else.
 
 ## Install it once
@@ -149,6 +151,8 @@ lib|lib64/libytdlp.a       static archive
 lib|lib64/cmake/libytdlp/  find_package config, versioned
 share/libytdlp/python/     the bridge, used automatically
 share/libytdlp/yt-dlp/     pinned yt-dlp sources, used automatically
+share/libytdlp/python-stdlib/  staged CPython stdlib, Linux only for now
+share/libytdlp/runtime.json    which libpython and stdlib the stage came from
 share/libytdlp/sbom.json   generated at install time from pinned sources
 share/doc/libytdlp/        LICENSE, NOTICE, THIRD_PARTY_NOTICES.md
 ```
@@ -162,7 +166,7 @@ find_package(libytdlp REQUIRED)
 target_link_libraries(myapp PRIVATE libytdlp::ytdlp)
 ```
 
-Pass `-DCMAKE_PREFIX_PATH=/your/prefix` at configure time when the install isn't on a system path. `libytdlp::ytdlp` is the shared library, `libytdlp::ytdlp_static` is the static one. Both are installed, and the static target carries its Threads, Python, and C++ runtime linkage with it, so plain C projects link it without extra flags.
+Pass `-DCMAKE_PREFIX_PATH=/your/prefix` at configure time when the install isn't on a system path. `libytdlp::ytdlp` is the shared library, `libytdlp::ytdlp_static` is the static one. Both are installed, and the static target carries its Threads, Python, and C++ runtime linkage with it, so plain C projects link it without extra flags. One difference: isolated mode currently kicks in through the shared library only. A static link can't locate the staged tree from the archive, so it runs off ambient Python like before until that path learns otherwise.
 
 ### From Rust
 

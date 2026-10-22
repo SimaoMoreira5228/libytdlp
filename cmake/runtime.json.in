@@ -1,0 +1,9 @@
+{
+  "profile": "@LIBYTDLP_DEPLOYMENT_PROFILE@",
+  "python": "@Python_VERSION@",
+  "python_executable": "@Python_EXECUTABLE@",
+  "libpython": "@Python_LIBRARIES@",
+  "stdlib_source": "@LIBYTDLP_PYTHON_STDLIB@",
+  "ytdlp_commit": "@LIBYTDLP_YTDLP_COMMIT@",
+  "version": "@PROJECT_VERSION@"
+}

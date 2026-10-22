@@ -6,6 +6,9 @@
 namespace libytdlp {
 
 std::string module_dir();
+std::string staged_share_dir();
+std::string staged_stdlib_dir();
+bool has_staged_runtime();
 
 } // namespace libytdlp
 
