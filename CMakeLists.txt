@@ -195,6 +195,9 @@ execute_process(
 )
 
 if(LIBYTDLP_PYTHON_STDLIB)
+    # NOTE: sysconfig reports native separators; generated install scripts
+    # choke on unescaped backslashes, so normalize once here.
+    file(TO_CMAKE_PATH "${LIBYTDLP_PYTHON_STDLIB}" LIBYTDLP_PYTHON_STDLIB)
     message(STATUS "Bundled stdlib source: ${LIBYTDLP_PYTHON_STDLIB}")
 
     install(
