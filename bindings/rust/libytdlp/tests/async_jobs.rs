@@ -155,7 +155,9 @@ fn async_download_completes() {
     let client = Client::new(&options).expect("options must be accepted");
 
     let job = client
-        .download(&server.url("/file.bin"), "{}")
+        // NOTE: force direct connections so the loopback fixture ignores any
+        // ambient proxy env; env scrubbing would race across parallel tests.
+        .download(&server.url("/file.bin"), "{\"proxy\": \"\"}")
         .expect("job must start");
 
     let info = block_on(job.wait_async()).expect("async download must succeed");
@@ -175,7 +177,9 @@ fn async_download_completes() {
 fn async_extract_completes() {
     let server = FixtureServer::start(65536, 8_000_000);
 
-    let client = Client::new("{}").expect("default options must be accepted");
+    // NOTE: force direct connections so the loopback fixture ignores any
+    // ambient proxy env; env scrubbing would race across parallel tests.
+    let client = Client::new("{\"proxy\": \"\"}").expect("default options must be accepted");
 
     let info = block_on(client.extract_async(server.url("/file.bin")))
         .expect("async extract must succeed");
@@ -190,7 +194,10 @@ fn concurrent_async_extracts_share_client() {
     let server = FixtureServer::start(65536, 8_000_000);
     let url = server.url("/file.bin");
 
-    let client = std::sync::Arc::new(Client::new("{}").expect("options must be accepted"));
+    // NOTE: force direct connections so the loopback fixture ignores any
+    // ambient proxy env; env scrubbing would race across parallel tests.
+    let client =
+        std::sync::Arc::new(Client::new("{\"proxy\": \"\"}").expect("options must be accepted"));
 
     let handles: Vec<std::thread::JoinHandle<()>> = (0..4)
         .map(|_| {
@@ -219,7 +226,9 @@ fn dropping_future_mid_flight_is_safe() {
     let client = Client::new(&options).expect("options must be accepted");
 
     let job = client
-        .download(&server.url("/big.bin"), "{}")
+        // NOTE: force direct connections so the loopback fixture ignores any
+        // ambient proxy env; env scrubbing would race across parallel tests.
+        .download(&server.url("/big.bin"), "{\"proxy\": \"\"}")
         .expect("job must start");
 
     {

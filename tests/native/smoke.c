@@ -254,18 +254,16 @@ static void check_network_url(void) {
 }
 
 static void check_extract_per_call_override(void) {
-    char* saved[PROXY_SCRUB_COUNT];
-    char* saved_lower = NULL;
-    char* saved_upper = NULL;
-    scrub_proxy_env(saved, &saved_lower, &saved_upper);
-
     int port = 0;
     ly_process child = spawn_fixture("65536", "8000000", &port);
 
     char url[128];
     snprintf(url, sizeof(url), "http://127.0.0.1:%d/file.bin", port);
 
-    static const char context_options[] = "{\"skip_download\": true}";
+    // NOTE: proxy "" pins loopback fixtures to a direct connection. Scrubbing
+    // environ would not work: CPython snapshots os.environ at startup and
+    // ignores later raw setenv/unsetenv calls.
+    static const char context_options[] = "{\"skip_download\": true, \"proxy\": \"\"}";
 
     ly_context* context = NULL;
     assert(
@@ -354,8 +352,6 @@ static void check_extract_per_call_override(void) {
     assert(ly_context_release(context) == LY_OK);
 
     stop_fixture(child);
-
-    restore_proxy_env(saved, saved_lower, saved_upper);
 }
 
 int main(void) {
