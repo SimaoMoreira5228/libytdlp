@@ -195,8 +195,6 @@ execute_process(
 )
 
 if(LIBYTDLP_PYTHON_STDLIB)
-    # NOTE: sysconfig reports native separators; generated install scripts
-    # choke on unescaped backslashes, so normalize once here.
     file(TO_CMAKE_PATH "${LIBYTDLP_PYTHON_STDLIB}" LIBYTDLP_PYTHON_STDLIB)
     message(STATUS "Bundled stdlib source: ${LIBYTDLP_PYTHON_STDLIB}")
 
@@ -210,9 +208,6 @@ if(LIBYTDLP_PYTHON_STDLIB)
         PATTERN "config-*" EXCLUDE
     )
 
-    # NOTE: Windows keeps extension modules in a DLLs sibling of Lib rather
-    # than lib-dynload; stage it when present so isolated boots can import
-    # socket/_ssl there exactly like the system interpreter does.
     get_filename_component(LIBYTDLP_PYTHON_HOME "${LIBYTDLP_PYTHON_STDLIB}" DIRECTORY)
 
     if(EXISTS "${LIBYTDLP_PYTHON_HOME}/DLLs")
@@ -339,16 +334,12 @@ if(BUILD_TESTING)
     endif()
 
     if(MSVC)
-        # NOTE: MSVC Release defines NDEBUG, which would silently disable assert()
-        # in the test executables. Undefine it for tests only; the library keeps it.
         foreach(target ly_smoke ly_jobs)
             target_compile_options(${target} PRIVATE
                 $<$<CONFIG:Release,RelWithDebInfo,MinSizeRel>:/UNDEBUG>
             )
         endforeach()
     else()
-        # NOTE: Same NDEBUG problem as MSVC above: Release-type configs pass
-        # -DNDEBUG, which would drop the assert() calls the tests rely on.
         foreach(target ly_smoke ly_jobs)
             target_compile_options(${target} PRIVATE
                 $<$<CONFIG:Release,RelWithDebInfo,MinSizeRel>:-UNDEBUG>

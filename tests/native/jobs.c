@@ -89,7 +89,6 @@ static void make_tmpdir(char* path, size_t len) {
     assert((size_t)written < len);
     assert(CreateDirectoryA(path, NULL) != 0);
 
-    // NOTE: forward slashes keep temp paths valid inside JSON options.
     for (size_t i = 0; path[i] != '\0'; i++) {
         if (path[i] == '\\') {
             path[i] = '/';
@@ -241,9 +240,6 @@ static void check_job_cancel(void) {
     char dir[256];
     make_tmpdir(dir, sizeof(dir));
 
-    // NOTE: proxy "" pins loopback fixtures to a direct connection. Scrubbing
-    // environ here would not work: CPython snapshots os.environ at startup and
-    // ignores later raw setenv/unsetenv calls.
     char options[512];
     snprintf(options, sizeof(options), "{\"outtmpl\": \"%s/big.bin\", \"proxy\": \"\"}", dir);
 

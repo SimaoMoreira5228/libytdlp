@@ -215,8 +215,6 @@ endif()
 
 message(STATUS "staged smoke output without env:\n${run_bare_output}")
 
-# NOTE: install-tree is not a Windows test, so env -i and the probe's link
-# flags are available on every host that reaches this script.
 if(NOT CMAKE_HOST_SYSTEM_NAME STREQUAL "Windows")
   execute_process(
     COMMAND env -i PATH=/usr/bin:/bin "${staged_binary}"

@@ -36,8 +36,6 @@ impl PlayerClient {
         match self {
             Self::Default => "default",
             Self::Android => "android",
-            // NOTE: upstream removed the `tv_embedded` client as broken, so the
-            // embedded slot maps to the supported `web_embedded` client instead.
             Self::TvEmbedded => "web_embedded",
             Self::Ios => "ios",
             Self::Web => "web",

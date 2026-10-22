@@ -111,15 +111,12 @@ bool init_isolated(
         return false;
     }
 
-    // NOTE: appending alone does not enable the list; without this flag
-    // CPython discards it and falls back to prefix-derived paths.
     config.module_search_paths_set = 1;
 
     PyStatus status = Py_InitializeFromConfig(&config);
     PyConfig_Clear(&config);
 
     if (PyStatus_Exception(status)) {
-        // NOTE: Py_ExitStatusException would terminate the host; report instead.
         error = status.err_msg != nullptr ? status.err_msg : "isolated init failed";
         return false;
     }

@@ -260,9 +260,6 @@ static void check_extract_per_call_override(void) {
     char url[128];
     snprintf(url, sizeof(url), "http://127.0.0.1:%d/file.bin", port);
 
-    // NOTE: proxy "" pins loopback fixtures to a direct connection. Scrubbing
-    // environ would not work: CPython snapshots os.environ at startup and
-    // ignores later raw setenv/unsetenv calls.
     static const char context_options[] = "{\"skip_download\": true, \"proxy\": \"\"}";
 
     ly_context* context = NULL;
