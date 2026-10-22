@@ -26,6 +26,10 @@ is Apache-2.0 (see LICENSE). Nothing below is relicensed by us.
   packages). Windows staging adds the `DLLs` extension-module directory
   beside it. Ship the PSF license text with it; the staged stdlib carries
   its own `LICENSE.txt`.
+- Linux `cmake --install` also stages the exact `libpython` shared object
+  next to `libytdlp.so` with an `$ORIGIN` rpath, so the staged library
+  loads the staged interpreter without `LD_LIBRARY_PATH`. Windows and
+  macOS keep their system-provided interpreter binary for now.
 
 ## Runtime dependency policy
 

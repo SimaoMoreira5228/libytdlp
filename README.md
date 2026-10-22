@@ -146,7 +146,8 @@ Under the prefix:
 
 ```
 include/libytdlp/          the C ABI headers
-lib|lib64/libytdlp.so*     shared library
+lib|lib64/libytdlp.so*     shared library (rpath $ORIGIN on Linux)
+lib|lib64/libpython*.so*   staged interpreter, Linux only for now
 lib|lib64/libytdlp.a       static archive
 lib|lib64/cmake/libytdlp/  find_package config, versioned
 share/libytdlp/python/     the bridge, used automatically

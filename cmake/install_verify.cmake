@@ -159,6 +159,41 @@ if(staged_ffmpeg)
   message(FATAL_ERROR "staged FFmpeg artifacts must not ship: ${staged_ffmpeg}")
 endif()
 
+if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux")
+  file(GLOB staged_shared_lib "${staged_libdir}/libytdlp.so.*")
+
+  if(NOT staged_shared_lib)
+    message(FATAL_ERROR "staged shared library not found under ${staged_libdir}")
+  endif()
+
+  list(GET staged_shared_lib 0 staged_shared_first)
+
+  execute_process(
+    COMMAND ldd "${staged_shared_first}"
+    OUTPUT_VARIABLE staged_ldd_output
+    ERROR_VARIABLE staged_ldd_output
+    RESULT_VARIABLE staged_ldd_result
+  )
+
+  if(NOT staged_ldd_result EQUAL 0)
+    message(FATAL_ERROR "ldd on staged library failed:\n${staged_ldd_output}")
+  endif()
+
+  set(staged_libpython_found FALSE)
+
+  string(REPLACE "\n" ";" staged_ldd_lines "${staged_ldd_output}")
+
+  foreach(staged_ldd_line IN LISTS staged_ldd_lines)
+    if(staged_ldd_line MATCHES "libpython" AND staged_ldd_line MATCHES "${staged_libdir}")
+      set(staged_libpython_found TRUE)
+    endif()
+  endforeach()
+
+  if(NOT staged_libpython_found)
+    message(FATAL_ERROR "staged library does not load staged libpython:\n${staged_ldd_output}")
+  endif()
+endif()
+
 execute_process(
   COMMAND "${LIBYTDLP_C_COMPILER}"
     "${LIBYTDLP_SOURCE_DIR}/tests/native/smoke.c"

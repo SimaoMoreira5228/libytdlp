@@ -233,6 +233,31 @@ if(LIBYTDLP_PYTHON_STDLIB)
 else()
     message(WARNING "Python stdlib not found; bundled runtime will be incomplete")
 endif()
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    execute_process(
+        COMMAND ${Python_EXECUTABLE} -c "import sysconfig; print(sysconfig.get_config_var('INSTSONAME') or '')"
+        OUTPUT_VARIABLE LIBYTDLP_PYTHON_SONAME
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET
+    )
+
+    get_filename_component(LIBYTDLP_PYTHON_LIB_REAL "${Python_LIBRARIES}" REALPATH)
+
+    if(LIBYTDLP_PYTHON_SONAME
+        AND LIBYTDLP_PYTHON_LIB_REAL MATCHES "\\.so(\\.|$)"
+        AND EXISTS "${LIBYTDLP_PYTHON_LIB_REAL}")
+        install(
+            FILES "${LIBYTDLP_PYTHON_LIB_REAL}"
+            DESTINATION ${CMAKE_INSTALL_LIBDIR}
+            RENAME "${LIBYTDLP_PYTHON_SONAME}"
+        )
+
+        set_target_properties(ytdlp PROPERTIES INSTALL_RPATH "$ORIGIN")
+    else()
+        message(STATUS "libpython shared object not found; skipping staged libpython")
+    endif()
+endif()
 install(EXPORT libytdlp-targets
     NAMESPACE libytdlp::
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/libytdlp
