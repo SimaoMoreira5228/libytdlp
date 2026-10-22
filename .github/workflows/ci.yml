@@ -147,6 +147,36 @@ jobs:
           cargo build --locked
           cargo test --locked
 
+  linux-arm64:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Install system deps
+        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build python3-dev
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: astral-sh/setup-uv@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Sync Python env
+        run: uv sync --locked
+      - name: Expose venv tools to later steps
+        run: echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
+      - name: Configure and build
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
+            -DPython_EXECUTABLE="$(which python)"
+          cmake --build build --parallel
+      - name: Test
+        run: ctest --test-dir build --output-on-failure --timeout 300
+      - name: Rust tests
+        working-directory: .
+        env:
+          LIBYTDLP_LIB_DIR: ${{ github.workspace }}/build
+        run: cargo test --locked
+
   sbom:
     runs-on: ubuntu-latest
     steps:
