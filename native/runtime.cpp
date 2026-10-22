@@ -89,11 +89,20 @@ bool init_isolated(
         append_config_path(config, stdlib.c_str(), error);
 
     if (paths_ok) {
-        std::string dynload = (std::filesystem::path(stdlib) / "lib-dynload").string();
-
         std::error_code code;
-        if (std::filesystem::is_directory(dynload, code) && !code) {
-            paths_ok = append_config_path(config, dynload.c_str(), error);
+
+        for (const char* ext : {"lib-dynload", "DLLs"}) {
+            std::string candidate = (std::filesystem::path(stdlib) / ext).string();
+
+            if (std::filesystem::is_directory(candidate, code) && !code) {
+                paths_ok = append_config_path(config, candidate.c_str(), error);
+            }
+
+            if (!paths_ok) {
+                break;
+            }
+
+            code.clear();
         }
     }
 

@@ -109,20 +109,18 @@ if(NOT EXISTS "${LIBYTDLP_INSTALL_PREFIX}/share/libytdlp/yt-dlp/yt_dlp/__init__.
   message(FATAL_ERROR "staged yt-dlp sources not found under ${LIBYTDLP_INSTALL_PREFIX}/share/libytdlp")
 endif()
 
-if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux")
-  if(NOT EXISTS "${LIBYTDLP_INSTALL_PREFIX}/share/libytdlp/python-stdlib/os.py")
-    message(FATAL_ERROR "staged python stdlib not found under ${LIBYTDLP_INSTALL_PREFIX}/share/libytdlp")
-  endif()
+if(NOT EXISTS "${LIBYTDLP_INSTALL_PREFIX}/share/libytdlp/python-stdlib/os.py")
+  message(FATAL_ERROR "staged python stdlib not found under ${LIBYTDLP_INSTALL_PREFIX}/share/libytdlp")
+endif()
 
-  if(NOT EXISTS "${LIBYTDLP_INSTALL_PREFIX}/share/libytdlp/runtime.json")
-    message(FATAL_ERROR "staged runtime record not found under ${LIBYTDLP_INSTALL_PREFIX}/share/libytdlp")
-  endif()
+if(NOT EXISTS "${LIBYTDLP_INSTALL_PREFIX}/share/libytdlp/runtime.json")
+  message(FATAL_ERROR "staged runtime record not found under ${LIBYTDLP_INSTALL_PREFIX}/share/libytdlp")
+endif()
 
-  file(READ "${LIBYTDLP_INSTALL_PREFIX}/share/libytdlp/runtime.json" staged_runtime_record)
+file(READ "${LIBYTDLP_INSTALL_PREFIX}/share/libytdlp/runtime.json" staged_runtime_record)
 
-  if(NOT staged_runtime_record MATCHES "libpython")
-    message(FATAL_ERROR "staged runtime record has no libpython entry:\n${staged_runtime_record}")
-  endif()
+if(NOT staged_runtime_record MATCHES "libpython")
+  message(FATAL_ERROR "staged runtime record has no libpython entry:\n${staged_runtime_record}")
 endif()
 
 foreach(staged_doc LICENSE NOTICE THIRD_PARTY_NOTICES.md)
@@ -217,7 +215,9 @@ endif()
 
 message(STATUS "staged smoke output without env:\n${run_bare_output}")
 
-if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux")
+# NOTE: install-tree is not a Windows test, so env -i and the probe's link
+# flags are available on every host that reaches this script.
+if(NOT CMAKE_HOST_SYSTEM_NAME STREQUAL "Windows")
   execute_process(
     COMMAND env -i PATH=/usr/bin:/bin "${staged_binary}"
     RESULT_VARIABLE run_scrubbed_result

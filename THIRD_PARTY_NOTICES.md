@@ -18,15 +18,14 @@ is Apache-2.0 (see LICENSE). Nothing below is relicensed by us.
 
 - License: Python Software Foundation License plus bundled notices.
 - System-runtime profiles link whatever CPython CMake finds (3.10+).
-- Linux `FULL_BUNDLED` prototype: `cmake --install` stages the build
+- `FULL_BUNDLED`: `cmake --install` stages the build
   Python's standard library under `<prefix>/share/libytdlp/python-stdlib`
   (no site packages, no bytecode caches) plus a `runtime.json` record of
   the exact libpython used, and the native runtime boots from those paths
   with isolated `PyConfig` (no `PYTHONPATH`/`PYTHONHOME`, no system site
-  packages). Ship the PSF license text with it; the staged stdlib carries
+  packages). Windows staging adds the `DLLs` extension-module directory
+  beside it. Ship the PSF license text with it; the staged stdlib carries
   its own `LICENSE.txt`.
-- Windows/macOS bundled runtimes are not covered yet. Those platforms keep
-  the old ambient-interpreter behavior until their own staging lands.
 
 ## Runtime dependency policy
 
