@@ -211,6 +211,15 @@ The build script picks a fresh `<repo>/build` when one exists, otherwise it conf
 
 `LIBYTDLP_LINK=shared` forces the `.so` instead, for when you want one shared copy across processes. Then the loader has to find it: install system-wide or bake an rpath yourself. `LIBYTDLP_LINK=static` fails loudly if no archive is around. `LIBYTDLP_PYTHON` picks the interpreter used for Python linkage, default `python3`. Leave `LIBYTDLP_LIB_DIR` unset and the build script checks your repo `build/` directory first, then a system-wide install.
 
+For cross-compiling, `LIBYTDLP_PYTHON` is the host executable used to build and inspect Python metadata. Set `LIBYTDLP_PYTHON_LIBDIR` and `LIBYTDLP_PYTHON_LIB` when its reported library belongs to the host instead of the target. The library value is the linker name, such as `python3.11` (without `lib` or the file suffix). CMake still needs target Python headers and library configured through the cross toolchain.
+
+```bash
+LIBYTDLP_PYTHON=/usr/bin/python3 \
+LIBYTDLP_PYTHON_LIBDIR=/usr/lib/aarch64-linux-gnu \
+LIBYTDLP_PYTHON_LIB=python3.11 \
+cargo build --target aarch64-unknown-linux-gnu
+```
+
 ```rust
 let client = libytdlp::Client::new("{}")?;
 let info = client.extract("https://example.org/media")?;

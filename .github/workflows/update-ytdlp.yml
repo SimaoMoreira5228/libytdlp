@@ -1,0 +1,120 @@
+name: update yt-dlp
+
+on:
+  schedule:
+    - cron: '29 9 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: write
+
+concurrency:
+  group: update-ytdlp
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: astral-sh/setup-uv@v10.3.2
+
+      - name: Find latest stable yt-dlp release
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="$(gh release view --repo yt-dlp/yt-dlp --json tagName,isPrerelease \
+            --jq 'select(.isPrerelease == false) | .tagName')"
+          if ! [[ "$version" =~ ^[0-9]{4}\.[0-9]{2}\.[0-9]{2}$ ]]; then
+            echo "Unexpected yt-dlp stable release tag: $version" >&2
+            exit 1
+          fi
+          current="$(python -c 'import re; from pathlib import Path; print(re.search(r"yt-dlp==([0-9.]+)", Path("pyproject.toml").read_text()).group(1))')"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "current=$current" >> "$GITHUB_OUTPUT"
+          echo "Latest yt-dlp: $version; currently pinned: $current"
+
+      - name: Find an open update PR or choose a fresh branch
+        id: update
+        if: steps.release.outputs.version != steps.release.outputs.current
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          open_pr="$(gh pr list --state open --base "$DEFAULT_BRANCH" \
+            --json number,headRefName \
+            --jq '[.[] | select(.headRefName == "automation/update-ytdlp" or (.headRefName | startswith("automation/update-ytdlp-")))] | .[0] // empty')"
+
+          if [ -n "$open_pr" ]; then
+            branch="$(jq -r .headRefName <<< "$open_pr")"
+            number="$(jq -r .number <<< "$open_pr")"
+            echo "Updating open yt-dlp PR #$number on $branch"
+          else
+            branch="automation/update-ytdlp-$VERSION-$GITHUB_RUN_ID"
+            number=""
+            echo "No open yt-dlp update PR; using new branch $branch"
+          fi
+
+          echo "branch=$branch" >> "$GITHUB_OUTPUT"
+          echo "number=$number" >> "$GITHUB_OUTPUT"
+
+      - name: Update the existing update branch
+        if: steps.release.outputs.version != steps.release.outputs.current
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          BRANCH: ${{ steps.update.outputs.branch }}
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          git fetch origin "$DEFAULT_BRANCH"
+          git switch --force-create "$BRANCH" "origin/$DEFAULT_BRANCH"
+          git submodule update --init --recursive
+          git -C third_party/yt-dlp fetch --depth=1 origin \
+            "refs/tags/$VERSION:refs/tags/$VERSION"
+          git -C third_party/yt-dlp checkout --detach "$VERSION"
+          commit="$(git -C third_party/yt-dlp rev-parse HEAD)"
+
+          python tools/update-ytdlp.py "$VERSION" "$commit"
+          uv lock
+          uv sync --locked
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add COMPATIBILITY.md README.md pyproject.toml uv.lock third_party/yt-dlp
+          git diff --cached --quiet && exit 0
+          git commit -m "chore: update yt-dlp to $VERSION"
+          git push --force origin "$BRANCH"
+
+      - name: Create or update the pull request
+        if: steps.release.outputs.version != steps.release.outputs.current
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: ${{ steps.update.outputs.branch }}
+          PR_NUMBER: ${{ steps.update.outputs.number }}
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          title="chore: update yt-dlp to $VERSION"
+          body="Weekly update to the latest stable yt-dlp release. The CI workflow is dispatched against this branch after it is pushed."
+
+          if [ -n "$PR_NUMBER" ]; then
+            gh pr edit "$PR_NUMBER" --title "$title" --body "$body"
+          else
+            gh pr create --base "${{ github.event.repository.default_branch }}" \
+              --head "$BRANCH" --title "$title" --body "$body"
+          fi
+
+      - name: Run CI against the update branch
+        if: steps.release.outputs.version != steps.release.outputs.current
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: ${{ steps.update.outputs.branch }}
+        run: gh workflow run ci.yml --ref "$BRANCH"

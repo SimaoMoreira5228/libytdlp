@@ -12,7 +12,19 @@ fn python_link() {
     let default_python = if windows { "python" } else { "python3" };
     let python = env::var("LIBYTDLP_PYTHON").unwrap_or_else(|_| default_python.to_owned());
 
+    let configured_libdir = env::var("LIBYTDLP_PYTHON_LIBDIR").ok();
+    let configured_lib = env::var("LIBYTDLP_PYTHON_LIB").ok();
+
     if windows {
+        if let (Some(libdir), Some(file)) =
+            (configured_libdir.as_deref(), configured_lib.as_deref())
+        {
+            let stem = file.strip_suffix(".lib").unwrap_or(file);
+            println!("cargo:rustc-link-search=native={libdir}");
+            println!("cargo:rustc-link-lib={stem}");
+            return;
+        }
+
         let output = Command::new(&python)
             .args([
                 "-c",
@@ -28,12 +40,23 @@ fn python_link() {
         let text = String::from_utf8_lossy(&output.stdout);
         let mut lines = text.lines();
 
-        if let (Some(libdir), Some(file)) = (lines.next(), lines.next()) {
+        if let (Some(detected_libdir), Some(detected_file)) = (lines.next(), lines.next()) {
+            let libdir = configured_libdir.as_deref().unwrap_or(detected_libdir);
+            let file = configured_lib.as_deref().unwrap_or(detected_file);
             let stem = file.strip_suffix(".lib").unwrap_or(file);
             println!("cargo:rustc-link-search=native={libdir}");
             println!("cargo:rustc-link-lib={stem}");
         }
 
+        return;
+    }
+
+    if let (Some(libdir), Some(lib)) = (&configured_libdir, &configured_lib) {
+        println!("cargo:rustc-link-search=native={libdir}");
+        println!("cargo:rustc-link-lib={lib}");
+        println!("cargo:rustc-link-arg=-Wl,-rpath,{libdir}");
+        println!("cargo:python_libdir={libdir}");
+        println!("cargo:python_lib={lib}");
         return;
     }
 
@@ -52,7 +75,9 @@ fn python_link() {
     let text = String::from_utf8_lossy(&output.stdout);
     let mut lines = text.lines();
 
-    if let (Some(libdir), Some(lib)) = (lines.next(), lines.next()) {
+    if let (Some(detected_libdir), Some(detected_lib)) = (lines.next(), lines.next()) {
+        let libdir = configured_libdir.as_deref().unwrap_or(detected_libdir);
+        let lib = configured_lib.as_deref().unwrap_or(detected_lib);
         println!("cargo:rustc-link-search=native={libdir}");
         println!("cargo:rustc-link-lib={lib}");
         println!("cargo:rustc-link-arg=-Wl,-rpath,{libdir}");
@@ -226,6 +251,8 @@ fn main() {
     println!("cargo:rerun-if-env-changed=BUILD_DIR");
     println!("cargo:rerun-if-env-changed=LIBYTDLP_LINK");
     println!("cargo:rerun-if-env-changed=LIBYTDLP_PYTHON");
+    println!("cargo:rerun-if-env-changed=LIBYTDLP_PYTHON_LIBDIR");
+    println!("cargo:rerun-if-env-changed=LIBYTDLP_PYTHON_LIB");
 
     let windows = env::var("CARGO_CFG_WINDOWS").is_ok();
     let static_name = if windows {
