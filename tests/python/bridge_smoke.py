@@ -4,6 +4,13 @@ import subprocess
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "python"))
+test_ytdlp_dir = os.environ.get("LIBYTDLP_TEST_YTDLP_DIR")
+if test_ytdlp_dir:
+    sys.path.insert(0, test_ytdlp_dir)
+    inherited_pythonpath = os.environ.get("PYTHONPATH")
+    os.environ["PYTHONPATH"] = os.pathsep.join(
+        entry for entry in (test_ytdlp_dir, inherited_pythonpath) if entry
+    )
 
 import libytdlp_bridge
 from libytdlp_bridge import extract_json, versions

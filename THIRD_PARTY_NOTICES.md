@@ -37,11 +37,10 @@ is Apache-2.0 (see LICENSE). Nothing below is relicensed by us.
   covered files then.
 - Corrosion (MIT) is a build-time tool and is not shipped.
 
-## Test/dev environment (uv)
+## Test/dev environment
 
-- `pyproject.toml` pins `yt-dlp==2026.08.19` from PyPI for the local
-  test venv. Same version as the submodule pin, different delivery.
-  Keep them in sync.
+- `pyproject.toml` pins `yt-dlp==2026.10.21` from PyPI for tests, matching
+  the submodule. Use Python's `venv` and pip, or the optional `uv.lock`.
 
 ## Rust dependencies (bindings/rust, exact versions in bindings/rust/Cargo.lock)
 

@@ -275,8 +275,6 @@ configure_file(
 install(SCRIPT "${CMAKE_CURRENT_BINARY_DIR}/generated/install_sbom.cmake")
 
 if(BUILD_TESTING)
-    find_program(UV_EXECUTABLE NAMES uv REQUIRED)
-
     add_executable(ly_smoke tests/native/smoke.c tests/native/fixture.c)
     target_include_directories(ly_smoke PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include
@@ -369,9 +367,14 @@ if(BUILD_TESTING)
     endif()
 
     add_test(NAME bridge
-        COMMAND ${UV_EXECUTABLE} run --project ${CMAKE_CURRENT_SOURCE_DIR} python tests/python/bridge_smoke.py
+        COMMAND ${Python_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/python/bridge_smoke.py
     )
     set_tests_properties(bridge PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+    if(NOT LIBYTDLP_DEPLOYMENT_PROFILE STREQUAL "SYSTEM_YTDLP_SYSTEM_PYTHON")
+        set_tests_properties(bridge PROPERTIES ENVIRONMENT
+            "LIBYTDLP_TEST_YTDLP_DIR=${CMAKE_CURRENT_SOURCE_DIR}/third_party/yt-dlp"
+        )
+    endif()
 
     set(LIBYTDLP_INSTALL_VERIFY_PREFIX ${CMAKE_CURRENT_BINARY_DIR}/install-verify/prefix)
     set(LIBYTDLP_INSTALL_VERIFY_WORK ${CMAKE_CURRENT_BINARY_DIR}/install-verify/work)

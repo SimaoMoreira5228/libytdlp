@@ -22,7 +22,7 @@ uv sync
 ./dev test
 ```
 
-`uv sync` gives you the pinned yt-dlp test env. CMake finds your system Python for the embed side. You need its dev headers (`python3-dev` on Debian-likes).
+`uv sync` prepares the pinned test environment. If you prefer pip, `./dev pysync` creates `.venv` with Python's built-in `venv` module and installs the same yt-dlp version. CMake uses the venv interpreter when it exists. You need Python 3.11+ and its dev headers (`python3-dev` and `python3-venv` on Debian-likes).
 
 Run one extraction by hand:
 
@@ -269,7 +269,7 @@ No extra crates, just `std` and `libytdlp`. To try it offline, serve a file with
 ## Pins
 
 - yt-dlp `2026.10.21`, submodule at `third_party/yt-dlp`, unmodified.
-- Test venv pins the same version from PyPI. Keep the two in sync.
+- Test venv pins the same version from PyPI. Keep the two in sync; `uv.lock` records the resolved environment for `uv sync`.
 - Needs CPython 3.11 or newer.
 
 ## License

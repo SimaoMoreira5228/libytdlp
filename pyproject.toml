@@ -1,7 +1,7 @@
 [project]
 name = "libytdlp-tools"
 version = "0.6.0"
-description = "Dev/test tooling for libytdlp (uv-managed Python env, pinned yt-dlp)"
+description = "Dev/test tooling for libytdlp with pinned yt-dlp"
 requires-python = ">=3.10"
 dependencies = [
     "yt-dlp==2026.10.21",

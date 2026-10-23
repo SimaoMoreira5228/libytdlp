@@ -7,7 +7,7 @@ Legend: `verified` (proof named) · `known-broken` (reason named) · `unknown` (
 ## Pins behind the table
 
 - Bundled yt-dlp: `2026.10.21`, submodule `6ccd9773`.
-- Test-env yt-dlp (pyproject, `uv sync`): `2026.10.21`, same as the submodule. Keep the two in sync when the pin moves.
+- Test-env yt-dlp (pyproject, pip or optional uv): `2026.10.21`, same as the submodule. Keep the two in sync when the pin moves.
 - The pin must stay on a release tag, never a random master commit: container images install the same version from PyPI instead of the bundle, which only works when both are the identical release.
 
 ## Linux

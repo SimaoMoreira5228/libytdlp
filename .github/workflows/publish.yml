@@ -23,7 +23,6 @@ jobs:
         with:
           submodules: recursive
       - uses: dtolnay/rust-toolchain@stable
-      - uses: astral-sh/setup-uv@v10.3.2
       - name: Install system deps
         run: sudo apt-get update && sudo apt-get install -y cmake ninja-build python3-dev
       - name: Build native lib for publish verification
